@@ -4477,6 +4477,13 @@ function radarApplyData(data){
   scrub.value = RADAR.frameIdx;
 
   radarShowFrame(RADAR.frameIdx);
+
+  // Auto-play once frames are loaded — radar is meant to be
+  // ambient/animated by default on the kiosk. Guard prevents
+  // re-starting if the user has manually paused.
+  if(!RADAR.userPaused && !RADAR.playing){
+    setTimeout(radarPlay, 300);
+  }
 }
 
 function radarTileUrl(frame){
@@ -4521,7 +4528,11 @@ function radarShowFrame(idx){
 }
 
 function radarTogglePlay(){
-  if(RADAR.playing) radarStop(); else radarPlay();
+  // Track an explicit "user paused" flag so the auto-play in
+  // radarApplyData() doesn't re-start the loop the next time fresh
+  // tile frames arrive (every 5 min via the refresh timer).
+  if(RADAR.playing){ RADAR.userPaused = true;  radarStop(); }
+  else             { RADAR.userPaused = false; radarPlay(); }
 }
 
 function radarPlay(){
