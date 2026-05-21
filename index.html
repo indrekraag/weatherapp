@@ -1783,16 +1783,15 @@ body {
       calc(env(safe-area-inset-bottom, 0px) + 6px);
   }
 
-  /* Three-row grid spanning the full viewport.
-   *
-   * Layout (mirrors the analog of the mobile version):
+  /* Three-row grid:
    *   row 1: WARNING (full width, only when active warnings exist)
-   *   row 2: 7-DAY STRIP (full width — replaces the old top-of-map
-   *                       sparkline overlay)
-   *   row 3: HERO + FORECAST stacked in left col  |  RADAR map in right
+   *   row 2: LEFT COL (continues) | 7-DAY STRIP (top of right column,
+   *                                              above the map)
+   *   row 3: LEFT COL (continues) | RADAR map
    *
-   * The left column wraps hero + forecast-card inside .ipad-left-col so
-   * they stack as one scrollable region inside a single grid cell. */
+   * Left column spans rows 2-3 (i.e. the full vertical space below the
+   * warning row), giving hero + forecast-card room to breathe. The 7-day
+   * strip sits only above the radar in the right column. */
   .app {
     max-width: none;
     display: grid;
@@ -1822,12 +1821,15 @@ body {
   }
   #warning-bar.warning-bar-empty { display: none !important; }
 
-  /* LEFT COLUMN wrapper. On phone .ipad-left-col is invisible (contents);
-   * on iPad it becomes a flex column that contains hero + forecast-card
-   * and scrolls internally if the total content exceeds available height. */
+  /* LEFT COLUMN — spans rows 2-3 so it stretches to the top, full height.
+   * Inside .ipad-left-col we flex hero + forecast-card vertically.
+   * If content overflows the available height, the wrapper scrolls.
+   * `min-height: 0` is REQUIRED on a grid item that uses overflow-y so
+   * the scroll actually works rather than the cell expanding past the
+   * grid track. */
   .ipad-left-col {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 2 / -1;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1877,9 +1879,10 @@ body {
   .station-temp { font-size: 14px; }
   .station-sub { font-size: 8.5px; }
 
-  /* 7-DAY strip — full width, row 2 (above the map and sidebar) */
+  /* 7-DAY strip — sits in the RIGHT column only (above the map), so
+   * the left sidebar can stretch to the very top of the viewport. */
   .seven-day-card {
-    grid-column: 1 / -1;
+    grid-column: 2;
     grid-row: 2;
     padding: 8px 12px;
     flex-shrink: 0;
