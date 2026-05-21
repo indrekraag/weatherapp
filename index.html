@@ -1994,7 +1994,10 @@ body {
     padding: 10px 12px;
     flex-shrink: 0;
   }
-  .forecast-card .forecast-row:nth-of-type(2) { display: none; }  /* Tundub kui row */
+  /* Tundub kui already exists as a comfort pill in the hero; the
+   * forecast row is redundant on iPad. Hidden by class hook rather than
+   * :nth-of-type (which counts divs, not just forecast-rows). */
+  .forecast-card .forecast-row-feels { display: none !important; }
   .forecast-card .forecast-row { padding-bottom: 6px; margin-bottom: 6px; gap: 3px; }
   .forecast-card .forecast-row-label { font-size: 10px; letter-spacing: 1px; }
   .forecast-card .forecast-row-sub { font-size: 11px; }
@@ -2241,8 +2244,10 @@ body {
             <div class="metric-spark" id="spark-temp" aria-hidden="true"></div>
           </div>
 
-          <!-- ROW 2: TUNDUB KUI (apparent temperature) -->
-          <div class="forecast-row">
+          <!-- ROW 2: TUNDUB KUI (apparent temperature) — hidden on iPad
+               via the .forecast-row-feels class hook below; phone still
+               shows it. -->
+          <div class="forecast-row forecast-row-feels">
             <div class="forecast-row-head">
               <span class="forecast-row-label">Tundub kui</span>
               <span class="forecast-row-sub" id="feels-spark-sub">—</span>
