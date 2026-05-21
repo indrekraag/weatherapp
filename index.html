@@ -4620,14 +4620,41 @@ function initIpadEnhancements(){
   setTimeout(function(){ RADAR.map.invalidateSize(); drawOverlay(); }, 200);
   setTimeout(drawOverlay, 1500);
 
-  // Window resize → re-center map + redraw the SVG wind/sun overlay
+  // Window resize → re-center map + redraw the SVG wind/sun overlay +
+  // re-align the radar bottom with the forecast bottom.
   window.addEventListener('resize', function(){
     if(IPAD.resizeTimer) clearTimeout(IPAD.resizeTimer);
     IPAD.resizeTimer = setTimeout(function(){
       if(RADAR.map) RADAR.map.invalidateSize();
       drawOverlay();
+      syncRadarToForecast();
     }, 150);
   });
+
+  // Make the right column (7-day + radar) end at the same vertical
+  // point as the left column (hero + forecast). CSS Grid can't
+  // express "match this OTHER cell's bottom", so we measure the
+  // forecast card's bottom and set the radar card's height to
+  // reach there. Re-runs on load, after the first render burst, and
+  // on resize. Cheap (one getBoundingClientRect, one style write).
+  setTimeout(syncRadarToForecast, 600);
+  setTimeout(syncRadarToForecast, 1800);
+  setTimeout(syncRadarToForecast, 4000);
+}
+
+function syncRadarToForecast(){
+  if(!IPAD.active) return;
+  var fc = document.querySelector('.forecast-card');
+  var rc = document.getElementById('radar-card');
+  if(!fc || !rc) return;
+  var fcBottom = fc.getBoundingClientRect().bottom;
+  var rcTop    = rc.getBoundingClientRect().top;
+  var newHeight = fcBottom - rcTop;
+  if(newHeight < 150 || newHeight > window.innerHeight) return;
+  if(Math.abs(rc.offsetHeight - newHeight) < 2) return;       // no-op if unchanged
+  rc.style.height = newHeight + 'px';
+  if(RADAR && RADAR.map) RADAR.map.invalidateSize();
+  drawOverlay();
 }
 
 function ipadBaseMap(mode){
