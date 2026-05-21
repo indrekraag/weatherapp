@@ -1947,7 +1947,7 @@ body {
     position: absolute;
     top: 8px; left: 8px; right: 8px;
     z-index: 500;
-    padding: 8px 12px 6px;
+    padding: 8px 12px 10px;          /* extra bottom room for the axis */
     background: rgba(10,12,16,0.72);
     border: 1px solid rgba(255,255,255,0.10);
     border-radius: 14px;
@@ -1997,14 +1997,25 @@ body {
   .ipad-forecast-overlay .metric-spark {
     height: 18px; margin: 0; gap: 1px;
   }
-  /* The wind direction arrows live in a .metric-spark-dirs row below the
-   * Tuul bars. Compact down to ~12px tall so the strip stays slim. */
+  /* Direction arrows below the Tuul bars (same colour as the on-map
+   * streamlines so the two read as one continuous indicator). */
   .ipad-forecast-overlay .metric-spark-dirs {
-    height: 12px; margin-top: 0;
+    height: 14px; margin-top: 0;
   }
   .ipad-forecast-overlay .spark-arrow svg {
-    width: 7px !important; height: 12px !important;
+    width: 8px !important; height: 14px !important;
   }
+  /* Hour axis at the bottom of the strip — shared between Sadu and Tuul
+   * since both forecasts cover the same 24-hour window. The numeric
+   * markers (+0 / +6 / +12 / +18 / +24) are absolute-positioned via
+   * `left: %` percentages set inline by renderSpark, so the axis aligns
+   * pixel-perfectly with the bars when re-parented under #axis-ipad. */
+  .ipad-forecast-overlay .metric-spark-axis {
+    height: 11px; margin-top: 2px;
+    font-size: 9px;
+    color: rgba(255,255,255,0.65);
+  }
+  .ipad-forecast-overlay .metric-spark-axis span.edge { opacity: 0.55; }
   .ipad-forecast-overlay .ipad-fc-sub {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 10.5px; font-weight: 500;
@@ -2433,6 +2444,11 @@ body {
                      the streamlines drawn on the map so the two reads as
                      one continuous indicator -->
                 <div class="metric-spark-dirs" id="dirs-wind-ipad" aria-hidden="true"></div>
+                <!-- Shared hour axis (+0 / +6 / +12 / +18 / +24) — sits
+                     below the wind direction arrows so it aligns with
+                     both the Sadu and Tuul bar columns (same time scale).
+                     Populated by cloning #spark-wind's sibling axis. -->
+                <div class="metric-spark-axis" id="axis-ipad" aria-hidden="true"></div>
               </div>
               <span class="ipad-fc-sub" id="wind-spark-sub-ipad">—</span>
             </div>
@@ -4872,19 +4888,25 @@ function renderIpadSparklines(){
     if(src && dst && src.innerHTML){ dst.innerHTML = src.innerHTML; }
   });
 
-  // Mirror the wind direction arrow row — it's a sibling of #spark-wind
-  // in the phone forecast card. Find it by walking forward through
-  // siblings until we hit a .metric-spark-dirs.
+  // Mirror the wind direction arrow row + the hour axis. Both are
+  // siblings of #spark-wind in the phone forecast card, inserted by
+  // renderSpark() each time it runs. Walk forward through siblings
+  // to find them by class.
   var srcWind = document.getElementById('spark-wind');
-  var dstDirs = document.getElementById('dirs-wind-ipad');
-  if(srcWind && dstDirs){
-    var sib = srcWind.nextElementSibling, found = null;
+  if(srcWind){
+    var sib = srcWind.nextElementSibling;
+    var foundDirs = null, foundAxis = null;
     while(sib){
-      if(sib.classList && sib.classList.contains('metric-spark-dirs')){ found = sib; break; }
+      if(sib.classList){
+        if(sib.classList.contains('metric-spark-dirs')) foundDirs = sib;
+        if(sib.classList.contains('metric-spark-axis')) foundAxis = sib;
+      }
       sib = sib.nextElementSibling;
     }
-    if(found){ dstDirs.innerHTML = found.innerHTML; dstDirs.style.display = ''; }
-    else     { dstDirs.innerHTML = ''; }
+    var dstDirs = document.getElementById('dirs-wind-ipad');
+    var dstAxis = document.getElementById('axis-ipad');
+    if(dstDirs) dstDirs.innerHTML = foundDirs ? foundDirs.innerHTML : '';
+    if(dstAxis) dstAxis.innerHTML = foundAxis ? foundAxis.innerHTML : '';
   }
 
   // Mirror sub captions
