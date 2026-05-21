@@ -3606,29 +3606,51 @@ function fetchLaaneNigula(){
   fetchLaaneNigulaFrom(EMHI_LOCAL_URL, function(){ fetchLaaneNigulaFrom(EMHI_REMOTE_URL); });
 }
 function fetchKurevere(){
-  // Request all fields (*) so we can see what the API actually returns
-  // if the named fields have changed. Log the first feature attributes.
   var url = 'https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/MapServer/0/query'
     + '?where=' + encodeURIComponent("site_name='Kurevere'")
     + '&outFields=*'
     + '&f=json';
+  var status = function(msg){
+    // Show fetch state inside the Kurevere chip so iPad failures are
+    // visible without the dev console.
+    var sub = document.querySelector('#kv-block .station-sub');
+    if(sub && msg) sub.textContent = msg;
+  };
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url, true);
-  xhr.timeout = 10000;
+  xhr.timeout = 12000;
   xhr.onload = function(){
-    if(xhr.status !== 200){ console.warn('Kurevere HTTP', xhr.status); return; }
+    if(xhr.status !== 200){
+      console.warn('Kurevere HTTP', xhr.status);
+      status('HTTP ' + xhr.status);
+      // Retry once after 8 s if first attempt fails
+      setTimeout(fetchKurevere, 8000);
+      return;
+    }
     try{
       var data = JSON.parse(xhr.responseText);
       if(!data.features || !data.features[0]){
         console.warn('Kurevere: no features returned');
+        status('no data');
         return;
       }
       saveCache('wx.kurevere', data);
       renderKurevere(data);
-    }catch(e){ console.warn('Kurevere parse error', e); }
+    }catch(e){
+      console.warn('Kurevere parse error', e);
+      status('parse error');
+    }
   };
-  xhr.onerror = function(){ console.warn('Kurevere network error'); };
-  xhr.ontimeout = function(){ console.warn('Kurevere timeout'); };
+  xhr.onerror = function(){
+    console.warn('Kurevere network error');
+    status('võrgu viga');
+    setTimeout(fetchKurevere, 8000);
+  };
+  xhr.ontimeout = function(){
+    console.warn('Kurevere timeout');
+    status('aegus');
+    setTimeout(fetchKurevere, 8000);
+  };
   xhr.send();
 }
 
@@ -4785,30 +4807,22 @@ function drawOverlay(){
   var origin = latlngToPixel(CONFIG.lat, CONFIG.lng);
   var cx = origin.x, cy = origin.y;
 
-  // ── WIND streamlines ─────────────────────────────────────────────────
+  // ── WIND arrow — a single streamline through Madise pointing in the
+  // direction the wind is blowing TOWARD ─────────────────────────────
   if(IPAD.windDir !== null && IPAD.windSpeed !== null){
     var blowDeg = (IPAD.windDir + 180) % 360;          // direction wind blows TO
     var arrowLen = Math.min(Math.max(W, H) * 0.66, (90 + IPAD.windSpeed * 14) * 2);
-    var perpDeg  = (blowDeg + 90) % 360;
-    var offsets  = [-180, -120, -60, 0, 60, 120, 180];
-    var perpRad  = (perpDeg - 90) * Math.PI / 180;
+    var tail = anglePx((blowDeg + 180) % 360, arrowLen/2, cx, cy);
+    var tip  = anglePx(blowDeg, arrowLen/2, cx, cy);
+    var wx1 = tail.x.toFixed(1), wy1 = tail.y.toFixed(1),
+        wx2 = tip.x.toFixed(1),  wy2 = tip.y.toFixed(1);
+    parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
+               '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
+    parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
+               '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
 
-    offsets.forEach(function(off){
-      var ocx = cx + Math.cos(perpRad) * off;
-      var ocy = cy + Math.sin(perpRad) * off;
-      var tail = anglePx((blowDeg + 180) % 360, arrowLen/2, ocx, ocy);
-      var tip  = anglePx(blowDeg, arrowLen/2, ocx, ocy);
-      var x1 = tail.x.toFixed(1), y1 = tail.y.toFixed(1),
-          x2 = tip.x.toFixed(1),  y2 = tip.y.toFixed(1);
-      // Subtle black halo for legibility on satellite tiles
-      parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
-                 '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
-      parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
-                 '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
-    });
-
-    // Speed label at the tip of the centre arrow
-    var centerTip = anglePx(blowDeg, arrowLen/2, cx, cy);
+    // Speed label at the tip of the wind arrow
+    var centerTip = tip;
     var label = '<tspan font-weight="500">' + IPAD.windSpeed.toFixed(1) + '</tspan>';
     if(IPAD.windGust !== null && !isNaN(IPAD.windGust))
       label += '<tspan font-weight="700"> (' + IPAD.windGust.toFixed(1) + ')</tspan>';
