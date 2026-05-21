@@ -2412,15 +2412,6 @@ body {
         <div class="glass card" id="radar-card">
           <div class="card-header">
             <h2 id="radar-card-title">Vihmaradar</h2>
-            <div class="radar-mode-toggle" role="group">
-              <button type="button" class="radar-mode-btn active" data-layer="radar">Radar</button>
-              <a class="radar-mode-btn radar-mode-ext"
-                 href="https://www.ilmateenistus.ee/ilm/ilmavaatlused/satelliidipildid/infrapunane-pilt/"
-                 target="_blank" rel="noopener">Satelliit ↗</a>
-              <a class="radar-mode-btn radar-mode-ext"
-                 href="https://www.ilmateenistus.ee/ilm/prognoosid/mudelprognoosid/eesti/#layers/temp2mv2,temp2mtx,pilvMada,pilvKesk,pilvKorg"
-                 target="_blank" rel="noopener">Pilvisus ↗</a>
-            </div>
           </div>
           <!-- Map container. Inline height kept as a phone fallback;
                iPad layout overrides it to flex:1. -->
@@ -2436,8 +2427,8 @@ body {
           <div class="zoom-presets" id="zoom-presets">
             <button class="zoom-btn" onclick="ipadZoom(18)">50m</button>
             <button class="zoom-btn" onclick="ipadZoom(14)">2km</button>
-            <button class="zoom-btn active" onclick="ipadZoom(10)">10km</button>
-            <button class="zoom-btn" onclick="ipadZoom(8)">80km</button>
+            <button class="zoom-btn" onclick="ipadZoom(10)">10km</button>
+            <button class="zoom-btn active" onclick="ipadZoom(8)">80km</button>
             <button class="zoom-btn" onclick="ipadZoom(7)">EE</button>
             <span class="zoom-sep"></span>
             <button class="zoom-btn" onclick="ipadBaseMap('light')" id="ipad-base-light">MAP</button>
@@ -4614,11 +4605,26 @@ function initIpadEnhancements(){
   RADAR.map.on('move zoom viewreset resize load', drawOverlay);
   setInterval(drawOverlay, 60 * 1000);  // sun position ticks each minute
 
-  // Re-center on Madise at the default zoom so the location marker is
-  // dead centre for the wind/sun arrows.
-  RADAR.map.setView([CONFIG.lat, CONFIG.lng], 10, { animate: false });
+  // Re-center on Madise at the 80 km default zoom so wind streamlines
+  // and sunrise/sunset arrows have room to extend without spilling off
+  // the map edges (which would happen at the tighter 10 km / 2 km views).
+  RADAR.map.setView([CONFIG.lat, CONFIG.lng], 8, { animate: false });
   setTimeout(function(){ RADAR.map.invalidateSize(); drawOverlay(); }, 200);
   setTimeout(drawOverlay, 1500);
+
+  /* Refresh all fetches when the page becomes visible again (iPad woke
+   * from sleep, user came back to the Safari tab, etc.). setInterval
+   * pauses while the page is hidden, so without this Kurevere and the
+   * other station feeds would stay stale until the next 5-min tick. */
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible'){
+      if(typeof fetchKurevere      === 'function') fetchKurevere();
+      if(typeof fetchLaaneNigula   === 'function') fetchLaaneNigula();
+      if(typeof fetchWarnings      === 'function') fetchWarnings();
+      if(typeof fetchWeatherAndForecast === 'function') fetchWeatherAndForecast();
+      if(typeof fetchKpForecast    === 'function') fetchKpForecast();
+    }
+  });
 
   // Window resize → re-center map + redraw the SVG wind/sun overlay +
   // re-align the radar bottom with the forecast bottom.
@@ -4747,20 +4753,34 @@ function drawOverlay(){
   if(TODAY_SUNRISE_AZ !== null) IPAD.srAz = TODAY_SUNRISE_AZ;
   if(TODAY_SUNSET_AZ  !== null) IPAD.ssAz = TODAY_SUNSET_AZ;
 
+  /* ─── Style notes ──────────────────────────────────────────────────
+   *  • Wind streamlines drawn as solid (not dashed) tapered lines in
+   *    the same warm-cyan as the metric tile's wind value, with small
+   *    soft triangular heads — calmer/cleaner than the original
+   *    dashed lines with chunky double-stroke heads.
+   *  • Sunrise / sunset rays are also solid, in amber/coral. Labels
+   *    are inline SVG mini-icons (rising / setting sun over horizon)
+   *    rather than the 🌅 / 🌇 emoji that didn't match the rest of
+   *    the design language. */
+  var WIND_COLOR = 'rgba(150,210,250,0.95)';
+  var WIND_HALO  = 'rgba(0,0,0,0.55)';
+  var SR_COLOR   = 'rgba(233,167,107,0.96)';
+  var SS_COLOR   = 'rgba(218,132,110,0.96)';
+  var SUN_COLOR  = 'rgba(255,210,110,0.98)';
+  var TEXT_HALO  = 'rgba(0,0,0,0.85)';
+
+  function arrowHead(id, color){
+    return '<marker id="'+id+'" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto-start-reverse">' +
+             '<path d="M0,1 L8,4.5 L0,8 L1.7,4.5 Z" fill="'+color+'"/>' +
+           '</marker>';
+  }
+
   var parts = ['<defs>' +
-    '<marker id="arr-wind" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">' +
-      '<polygon points="0,0.5 7.5,4 0,7.5 1.5,4" fill="rgba(0,0,0,0.7)"/>' +
-      '<polygon points="0.5,1 7,4 0.5,7 2,4" fill="rgba(126,200,255,0.95)"/>' +
-    '</marker>' +
-    '<marker id="arr-sr" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">' +
-      '<polygon points="0,0.5 7.5,4 0,7.5 1.5,4" fill="rgba(0,0,0,0.7)"/>' +
-      '<polygon points="0.5,1 7,4 0.5,7 2,4" fill="rgba(233,167,107,0.95)"/>' +
-    '</marker>' +
-    '<marker id="arr-ss" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">' +
-      '<polygon points="0,0.5 7.5,4 0,7.5 1.5,4" fill="rgba(0,0,0,0.7)"/>' +
-      '<polygon points="0.5,1 7,4 0.5,7 2,4" fill="rgba(212,118,110,0.95)"/>' +
-    '</marker>' +
-    '</defs>'];
+    arrowHead('arr-wind', WIND_COLOR) +
+    arrowHead('arr-sr',   SR_COLOR) +
+    arrowHead('arr-ss',   SS_COLOR) +
+    arrowHead('arr-sun',  SUN_COLOR) +
+  '</defs>'];
 
   var origin = latlngToPixel(CONFIG.lat, CONFIG.lng);
   var cx = origin.x, cy = origin.y;
@@ -4768,22 +4788,23 @@ function drawOverlay(){
   // ── WIND streamlines ─────────────────────────────────────────────────
   if(IPAD.windDir !== null && IPAD.windSpeed !== null){
     var blowDeg = (IPAD.windDir + 180) % 360;          // direction wind blows TO
-    var arrowLen = Math.min(Math.max(W, H) * 0.70, (80 + IPAD.windSpeed * 12) * 2);
-    var perpDeg = (blowDeg + 90) % 360;
-    var offsets = [-180, -120, -60, 0, 60, 120, 180];
+    var arrowLen = Math.min(Math.max(W, H) * 0.66, (90 + IPAD.windSpeed * 14) * 2);
+    var perpDeg  = (blowDeg + 90) % 360;
+    var offsets  = [-180, -120, -60, 0, 60, 120, 180];
+    var perpRad  = (perpDeg - 90) * Math.PI / 180;
 
     offsets.forEach(function(off){
-      var perpRad = (perpDeg - 90) * Math.PI / 180;
       var ocx = cx + Math.cos(perpRad) * off;
       var ocy = cy + Math.sin(perpRad) * off;
       var tail = anglePx((blowDeg + 180) % 360, arrowLen/2, ocx, ocy);
       var tip  = anglePx(blowDeg, arrowLen/2, ocx, ocy);
-      parts.push('<line x1="'+tail.x.toFixed(1)+'" y1="'+tail.y.toFixed(1)+
-                 '" x2="'+tip.x.toFixed(1)+'" y2="'+tip.y.toFixed(1)+
-                 '" stroke="rgba(0,0,0,0.7)" stroke-width="5" stroke-dasharray="8 4" stroke-linecap="round"/>');
-      parts.push('<line x1="'+tail.x.toFixed(1)+'" y1="'+tail.y.toFixed(1)+
-                 '" x2="'+tip.x.toFixed(1)+'" y2="'+tip.y.toFixed(1)+
-                 '" stroke="rgba(126,200,255,0.95)" stroke-width="2.5" stroke-dasharray="8 4" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
+      var x1 = tail.x.toFixed(1), y1 = tail.y.toFixed(1),
+          x2 = tip.x.toFixed(1),  y2 = tip.y.toFixed(1);
+      // Subtle black halo for legibility on satellite tiles
+      parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
+                 '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
+      parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
+                 '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
     });
 
     // Speed label at the tip of the centre arrow
@@ -4793,52 +4814,81 @@ function drawOverlay(){
       label += '<tspan font-weight="700"> (' + IPAD.windGust.toFixed(1) + ')</tspan>';
     label += '<tspan font-weight="500"> m/s</tspan>';
     parts.push('<text x="'+centerTip.x.toFixed(1)+'" y="'+centerTip.y.toFixed(1)+
-               '" font-family="ui-monospace, SF Mono, monospace" font-size="13"' +
-               ' fill="rgba(180,220,255,1)"' +
-               ' stroke="rgba(0,0,0,0.92)" stroke-width="3.5" paint-order="stroke"' +
+               '" font-family="ui-monospace, SF Mono, monospace" font-size="12"' +
+               ' fill="rgba(220,240,255,1)"' +
+               ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                ' text-anchor="middle" dominant-baseline="central">' + label + '</text>');
   }
 
   // ── SUN rise/set + current ─────────────────────────────────────────
-  var sunLen = Math.min(W, H) * 0.42;
-  function sunLine(az, color, markerRef, time, emoji, textColor){
+  var sunLen = Math.min(W, H) * 0.40;
+
+  /* Sunrise icon: half-sun above a horizon line with an up arrow,
+   * Sunset icon: half-sun above a horizon line with a down arrow.
+   * Sized for inline use beside the time text. */
+  function sunGlyph(kind, color){
+    // viewBox 16×16, anchored so dominant-baseline:central centres it
+    var arrow = kind === 'rise'
+      ? '<path d="M11,9 L13,11 M11,9 L9,11 M11,9 L11,13" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
+      : '<path d="M11,13 L13,11 M11,13 L9,11 M11,13 L11,9" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>';
+    return '<svg x="-8" y="-8" width="16" height="16" viewBox="0 0 16 16" overflow="visible">' +
+             // half-sun disc
+             '<path d="M1,8 A5,5 0 0,1 11,8" fill="'+color+'" opacity="0.9"/>' +
+             // 3 small rays
+             '<line x1="6" y1="2" x2="6" y2="0.5" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
+             '<line x1="2.4" y1="4.4" x2="1.3" y2="3.3" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
+             '<line x1="9.6" y1="4.4" x2="10.7" y2="3.3" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
+             // horizon line
+             '<line x1="0" y1="9" x2="14" y2="9" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/>' +
+             arrow +
+           '</svg>';
+  }
+
+  function sunRay(az, color, markerRef, time, glyphKind){
     var tip = anglePx(az, sunLen, cx, cy);
-    parts.push('<line x1="'+cx.toFixed(1)+'" y1="'+cy.toFixed(1)+
-               '" x2="'+tip.x.toFixed(1)+'" y2="'+tip.y.toFixed(1)+
-               '" stroke="rgba(0,0,0,0.7)" stroke-width="4.5" stroke-dasharray="6 5" stroke-linecap="round"/>');
-    parts.push('<line x1="'+cx.toFixed(1)+'" y1="'+cy.toFixed(1)+
-               '" x2="'+tip.x.toFixed(1)+'" y2="'+tip.y.toFixed(1)+
-               '" stroke="'+color+'" stroke-width="2" stroke-dasharray="6 5" stroke-linecap="round" marker-end="url(#'+markerRef+')"/>');
+    var x1 = cx.toFixed(1), y1 = cy.toFixed(1),
+        x2 = tip.x.toFixed(1), y2 = tip.y.toFixed(1);
+    // Halo + coloured line, solid (no dashes — cleaner read)
+    parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
+               '" stroke="rgba(0,0,0,0.55)" stroke-width="3.2" stroke-linecap="round"/>');
+    parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
+               '" stroke="'+color+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#'+markerRef+')"/>');
     if(time){
-      var lbl = anglePx(az, sunLen + 28, cx, cy);
+      // Place the label slightly past the arrow tip, then nudge icon and
+      // text apart so the glyph sits to the left of the time string.
+      var lbl  = anglePx(az, sunLen + 30, cx, cy);
+      var glyphX = lbl.x - 18;
+      // Glyph (SVG composed of paths)
+      parts.push('<g transform="translate('+glyphX.toFixed(1)+','+lbl.y.toFixed(1)+')">' +
+                 sunGlyph(glyphKind, color) + '</g>');
+      // Time text
       parts.push('<text x="'+lbl.x.toFixed(1)+'" y="'+lbl.y.toFixed(1)+
                  '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
-                 ' fill="'+textColor+'"' +
-                 ' stroke="rgba(0,0,0,0.92)" stroke-width="3.5" paint-order="stroke"' +
-                 ' text-anchor="middle" dominant-baseline="central">'+emoji+' '+time+'</text>');
+                 ' fill="rgba(255,235,210,1)"' +
+                 ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                 ' text-anchor="start" dominant-baseline="central"> '+time+'</text>');
     }
   }
   var srTime = (document.getElementById('sunrise-time') || {}).textContent || '';
   var ssTime = (document.getElementById('sunset-time')  || {}).textContent || '';
   if(srTime === '—') srTime = '';
   if(ssTime === '—') ssTime = '';
-  if(IPAD.srAz !== null) sunLine(IPAD.srAz, 'rgba(233,167,107,0.95)', 'arr-sr', srTime, '🌅', 'rgba(244,180,120,1)');
-  if(IPAD.ssAz !== null) sunLine(IPAD.ssAz, 'rgba(212,118,110,0.95)', 'arr-ss', ssTime, '🌇', 'rgba(232,140,128,1)');
+  if(IPAD.srAz !== null) sunRay(IPAD.srAz, SR_COLOR, 'arr-sr', srTime, 'rise');
+  if(IPAD.ssAz !== null) sunRay(IPAD.ssAz, SS_COLOR, 'arr-ss', ssTime, 'set');
 
-  // Current sun position (daytime only)
+  // Current sun position (daytime only) — solid amber arrow, ~55% of
+  // the rise/set ray length so it reads as "between" the two endpoints.
   if(IPAD.sunProgress !== null && IPAD.srAz !== null && IPAD.ssAz !== null){
     var sweep = (IPAD.ssAz - IPAD.srAz + 360) % 360;
     if(sweep > 180) sweep -= 360;
     var sunAz = (IPAD.srAz + sweep * IPAD.sunProgress + 360) % 360;
-    var tip = anglePx(sunAz, sunLen * 0.55, cx, cy);
-    parts.push('<line x1="'+cx.toFixed(1)+'" y1="'+cy.toFixed(1)+
-               '" x2="'+tip.x.toFixed(1)+'" y2="'+tip.y.toFixed(1)+
-               '" stroke="rgba(0,0,0,0.7)" stroke-width="5" stroke-linecap="round"/>');
-    parts.push('<line x1="'+cx.toFixed(1)+'" y1="'+cy.toFixed(1)+
-               '" x2="'+tip.x.toFixed(1)+'" y2="'+tip.y.toFixed(1)+
-               '" stroke="rgba(255,222,98,0.98)" stroke-width="2.5" stroke-linecap="round"/>');
-    parts.push('<polygon points="0,-7 5,7 0,4 -5,7" fill="rgba(0,0,0,0.7)" transform="translate('+tip.x.toFixed(1)+','+tip.y.toFixed(1)+') rotate('+((sunAz+180)%360)+') scale(1.3)"/>');
-    parts.push('<polygon points="0,-7 5,7 0,4 -5,7" fill="rgba(255,222,98,0.98)" transform="translate('+tip.x.toFixed(1)+','+tip.y.toFixed(1)+') rotate('+((sunAz+180)%360)+')"/>');
+    var sTip = anglePx(sunAz, sunLen * 0.55, cx, cy);
+    var sx1 = cx.toFixed(1), sy1 = cy.toFixed(1),
+        sx2 = sTip.x.toFixed(1), sy2 = sTip.y.toFixed(1);
+    parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
+               '" stroke="rgba(0,0,0,0.55)" stroke-width="3.2" stroke-linecap="round"/>');
+    parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
+               '" stroke="'+SUN_COLOR+'" stroke-width="1.8" stroke-linecap="round" marker-end="url(#arr-sun)"/>');
   }
 
   svg.innerHTML = parts.join('');
