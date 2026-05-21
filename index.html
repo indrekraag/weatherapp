@@ -1766,21 +1766,34 @@ body {
       calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
-  /* Two-column grid spanning the full viewport */
+  /* Two-column grid spanning the full viewport.
+   * Mirrors the ORIGINAL iPad app: narrow info sidebar on the left,
+   * radar map fills the rest. No sun/moon/pollen/aurora cards — those
+   * belong on the phone build only. */
   .app {
     max-width: none;
     display: grid;
-    grid-template-columns: 420px 1fr;
-    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: auto 1fr;
     gap: 10px;
     height: calc(100vh - 16px);
     min-height: 0;
   }
 
-  /* Warning bar spans full width at the top, but only steals row height
-   * when actually visible. The transient alert-banner is hidden in iPad
-   * layout — we surface it inside the warning bar instead. */
-  .alert-banner { display: none !important; }
+  /* Cards that exist on phone but should NOT show on the iPad kiosk.
+   * Hidden via display:none — they still render to the DOM (so their
+   * cached fetches keep populating) but the iPad layout doesn't expose
+   * them as visible cards. */
+  .alert-banner,
+  .seven-day-card,
+  .duo-sunmoon,
+  .duo-air,
+  .footer { display: none !important; }
+
+  /* Warning bar — full-width row at the top, only visible if there ARE
+   * active warnings. When empty, .warning-bar-empty is added by
+   * renderWarnings() and we collapse the row entirely so the hero +
+   * radar get the extra vertical space. */
   #warning-bar {
     grid-column: 1 / -1;
     grid-row: 1;
@@ -1788,6 +1801,7 @@ body {
     min-height: 0;
     border-radius: 12px;
   }
+  #warning-bar.warning-bar-empty { display: none !important; }
 
   /* LEFT COLUMN: HERO card (compact) at top, duos below */
   .glass.hero {
@@ -1806,32 +1820,35 @@ body {
   .glass.hero::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
 
   /* Compact hero internals — landscape sidebar is taller but narrower
-   * than the phone, so trim padding/margin and tighten the SVG icon. */
-  .hero-bar { padding: 2px 0 8px; margin-bottom: 2px; }
-  .hero-bar-date { font-size: 11px; }
+   * than the phone. Everything is tuned to fit ~720px vertical (iPad
+   * viewport minus warning bar / Safari URL bar) WITHOUT scrolling. */
+  .hero-bar { padding: 1px 0 6px; margin-bottom: 0; }
+  .hero-bar-date { font-size: 10.5px; }
   .hero-title { margin-bottom: 0; }
-  .hero-title h2 { font-size: 10px; }
+  .hero-title h2 { font-size: 9.5px; }
   .hero-condition { font-size: 9px; }
-  .hero-main { padding: 0 2px 4px; gap: 10px; }
-  .temp-big { font-size: 60px; }
-  .temp-big .deg { font-size: 28px; }
-  .hero-icon { width: 64px; height: 64px; }
-  .hero-meta { gap: 6px; }
-  .pill { padding: 7px 9px; }
-  .pill .pill-label { font-size: 8.5px; }
-  .pill .pill-value { font-size: 15px; }
-  .hero-readings { gap: 5px; }
-  .hero-readings .metric { padding: 7px 8px; min-height: 56px; }
-  .hero-readings .metric-value { font-size: 14px; }
-  .hero-readings .metric-head { font-size: 8.5px; }
+  .hero-main { padding: 0 2px 2px; gap: 8px; }
+  .temp-big { font-size: 52px; line-height: 0.88; }
+  .temp-big .deg { font-size: 22px; }
+  .hero-icon { width: 52px; height: 52px; }
+  .hero-meta { gap: 5px; }
+  .pill { padding: 5px 8px; gap: 1px; }
+  .pill .pill-label { font-size: 8px; }
+  .pill .pill-value { font-size: 13px; }
+  .hero-readings { gap: 4px; margin-top: 2px; }
+  .hero-readings .metric { padding: 5px 7px; min-height: 48px; gap: 1px; }
+  .hero-readings .metric-value { font-size: 13px; }
+  .hero-readings .metric-value .unit { font-size: 9px; }
+  .hero-readings .metric-head { font-size: 8px; gap: 3px; }
+  .hero-readings .metric-sub { font-size: 9px; margin-top: 0; }
   .hero-readings .metric.wind-tile .wind-arrow {
-    font-size: 26px; width: 30px; height: 30px;
+    font-size: 22px; width: 26px; height: 26px;
   }
-  .stations { margin-top: 8px; padding-top: 10px; gap: 5px; }
-  .station { padding: 8px 6px; }
-  .station-name { font-size: 10px; }
-  .station-temp { font-size: 15px; }
-  .station-sub { font-size: 9px; }
+  .stations { margin-top: 6px; padding-top: 8px; gap: 5px; }
+  .station { padding: 6px 5px; gap: 2px; }
+  .station-name { font-size: 9.5px; }
+  .station-temp { font-size: 14px; }
+  .station-sub { font-size: 8.5px; }
 
   /* RIGHT COLUMN: big radar card */
   #radar-card {
@@ -1910,92 +1927,27 @@ body {
     margin: 0 2px;
   }
 
-  /* On phone, forecast/daily/duos stack vertically below the hero. In
-   * iPad landscape we hide the inline forecast card (it's shown as an
-   * overlay over the map instead) and arrange daily + the two duos into
-   * a single bottom strip across the full width below row 2. */
+  /* Phone forecast card stays rendered (so the sparkline data is computed
+   * each refresh) but stays off-screen on iPad — the iPad shows just the
+   * rain + wind rows in the top-of-map overlay instead. */
   .forecast-card { display: none; }
-  .glass.card:not(#radar-card):not(.forecast-card) {
-    padding: 8px 10px;
-  }
   .card-header { margin-bottom: 8px; }
   .card-header h2 { font-size: 10px; letter-spacing: 1.1px; }
   .card-header .meta { font-size: 9px; }
 
-  /* Five-row grid:
-   *   row 1: warning-bar (full width)
-   *   row 2: hero (col 1)  |  radar (col 2)
-   *   row 3: 7-day strip (full width, single card)
-   *   row 4: sun/moon duo (col 1) | pollen/aurora duo (col 2)
-   *   row 5: footer (full width) */
-  .app { grid-template-rows: auto 1fr auto auto auto; }
-
-  .seven-day-card { grid-column: 1 / -1; grid-row: 3; }
-
-  /* Each duo (.duo) keeps its phone-internal 2-col layout (its two cards
-   * sit side-by-side). We just place the two duo wrappers themselves
-   * across columns of the main grid in row 4. */
-  .duo { grid-row: 4; gap: 8px; }
-  .duo-sunmoon { grid-column: 1 / 2; }
-  .duo-air     { grid-column: 2 / -1; }
-
-  /* Compact sun/moon/pollen/aurora cards in the bottom strip */
-  .celestial-hero {
-    flex-direction: row;
-    padding: 5px 7px;
-    gap: 6px;
-    margin: 0 0 4px;
-    text-align: left;
-  }
-  .celestial-hero .celestial-icon { width: 22px; height: 22px; font-size: 18px; }
-  .celestial-hero .sun-disc { width: 18px; height: 18px; }
-  .celestial-main { font-size: 11px; text-align: left; flex: 1; }
-  .celestial-cap { font-size: 8.5px; text-align: left; }
-  .dl-row {
-    padding: 3px 6px 3px 2px;
-    grid-template-columns: 48px 1fr auto;
-    gap: 4px;
-    font-size: 10px;
-  }
-  .dl-label { font-size: 8px; }
-  .dl-value { font-size: 10px; }
-  .dl-az    { font-size: 8px; min-width: 20px; }
-  .dl-countdown { font-size: 10px; }
-  .gauge-row {
-    padding: 3px 6px 3px 2px;
-    grid-template-columns: 54px 1fr;
-    gap: 4px;
-    font-size: 10px;
-  }
-  .gauge-label { font-size: 8px; }
-  .gauge-text  { font-size: 10px; }
-  .kp-chart { height: 18px; margin-top: 4px; padding: 3px 5px; }
-  .kp-label { font-size: 7.5px; margin-top: 3px; }
-
-  /* 7-day strip: 7 tiles fit naturally at 1024px width */
-  .seven-day-card .daily { padding: 0 0 2px; margin: 0; gap: 4px; }
-  .seven-day-card .day {
-    flex: 0 0 calc((100% - 24px) / 7);
-    padding: 5px 2px;
-    gap: 1px;
-    border-radius: 12px;
-  }
-  .seven-day-card .day-name { font-size: 8.5px; }
-  .seven-day-card .day-ico  { font-size: 16px; margin: 0; }
-  .seven-day-card .day-high { font-size: 12px; }
-  .seven-day-card .day-low  { font-size: 9px; }
-  .seven-day-card .day-rain { font-size: 9px; }
-  .seven-day-card .day-wind { font-size: 8.5px; }
-
-  /* Forecast SPARKLINES — overlay panel pinned to the top-right of the
-   * radar card, so the user always has 24h temp/rain/wind in view while
-   * looking at the radar tiles. Glass like everything else. */
+  /* Forecast strip — sits at the top of the radar card spanning the
+   * full map width (mirrors the original iPad app's forecast-strip
+   * placement). Two rows only: Sadu (rain) + Tuul (wind). Temp lives
+   * already as the big number on the left sidebar, so it doesn't need
+   * a second presentation here.
+   *
+   * Each row is a single horizontal line:
+   *   [LABEL] [sparkline that fills remaining space] [sub-caption / max] */
   .ipad-forecast-overlay {
     position: absolute;
-    top: 10px; right: 10px;
+    top: 8px; left: 8px; right: 8px;
     z-index: 500;
-    width: 360px;
-    padding: 10px 12px;
+    padding: 8px 12px 6px;
     background: rgba(10,12,16,0.72);
     border: 1px solid rgba(255,255,255,0.10);
     border-radius: 14px;
@@ -2003,15 +1955,66 @@ body {
     -webkit-backdrop-filter: blur(18px) saturate(140%);
     box-shadow: 0 6px 20px rgba(0,0,0,0.4);
     color: var(--fg);
+    pointer-events: none;            /* don't block map drag */
   }
-  .ipad-forecast-overlay .card-header { margin-bottom: 6px; }
-  .ipad-forecast-overlay .card-header h2 { font-size: 9.5px; }
-  .ipad-forecast-overlay .forecast-row { padding-bottom: 4px; margin-bottom: 4px; gap: 2px; }
-  .ipad-forecast-overlay .forecast-row-label { font-size: 9px; }
-  .ipad-forecast-overlay .forecast-row-sub { font-size: 10px; }
-  .ipad-forecast-overlay .metric-spark { height: 18px; margin-top: 4px; gap: 1px; }
-  .ipad-forecast-overlay .precip-type-row { height: 14px; margin-top: 2px; }
-  .ipad-forecast-overlay .precip-type-icon { width: 14px; height: 14px; }
+  .ipad-forecast-overlay .ipad-fc-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px;
+    font-family: -apple-system, "SF Pro Display", sans-serif;
+  }
+  .ipad-forecast-overlay .ipad-fc-head h2 {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px;
+    text-transform: uppercase; color: rgba(255,255,255,0.92);
+  }
+  .ipad-forecast-overlay .ipad-fc-head .meta {
+    font-size: 9px; font-weight: 500; letter-spacing: 0.4px;
+    color: var(--fg-3); text-transform: uppercase;
+  }
+  .ipad-forecast-overlay .ipad-fc-head .meta strong {
+    color: var(--cold); font-weight: 600;
+  }
+  /* Each metric row is a 3-track grid. Sub column auto-sizes (was 120px
+   * fixed; long "max 12.4 m/s · kl 14" captions overflowed the right
+   * edge). min-width:0 on the sparkline wrap lets it shrink as needed. */
+  .ipad-forecast-overlay .ipad-fc-row {
+    display: grid;
+    grid-template-columns: 46px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 1px 0;
+  }
+  .ipad-forecast-overlay .ipad-fc-label {
+    font-family: -apple-system, "SF Pro Display", sans-serif;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: rgba(255,255,255,0.85);
+  }
+  .ipad-forecast-overlay .ipad-fc-spark {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .ipad-forecast-overlay .metric-spark {
+    height: 18px; margin: 0; gap: 1px;
+  }
+  /* The wind direction arrows live in a .metric-spark-dirs row below the
+   * Tuul bars. Compact down to ~12px tall so the strip stays slim. */
+  .ipad-forecast-overlay .metric-spark-dirs {
+    height: 12px; margin-top: 0;
+  }
+  .ipad-forecast-overlay .spark-arrow svg {
+    width: 7px !important; height: 12px !important;
+  }
+  .ipad-forecast-overlay .ipad-fc-sub {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10.5px; font-weight: 500;
+    color: rgba(255,255,255,0.80);
+    text-align: right;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   /* Footer pinned to the bottom row — single thin line of sources */
   .footer {
@@ -2033,10 +2036,10 @@ body {
   .hero-refresh-btn { width: 22px; height: 22px; font-size: 12px; }
 }
 
-/* Even larger displays (e.g. 12.9" iPad / desktop) — give the right
- * column more breathing room and bump the temp font a touch */
+/* Even larger displays (e.g. 12.9" iPad / desktop) — slightly wider
+ * sidebar and a bigger headline temp */
 @media (min-width: 1200px) and (orientation: landscape) {
-  .app { grid-template-columns: 460px 1fr; }
+  .app { grid-template-columns: 360px 1fr; }
   .temp-big { font-size: 68px; }
 }
 
@@ -2055,7 +2058,7 @@ body {
         <!-- WARNING-BAR — persistent CAP feed warnings (Lääne maakond). When
              no warnings, shows "Hoiatused puuduvad" in muted style. Severity
              colour applied via .warning-bar.minor / .moderate / .severe. -->
-        <div class="alert" id="warning-bar">
+        <div class="alert warning-bar-empty" id="warning-bar">
           <span class="alert-icon">✓</span>
           <span>Hoiatused puuduvad</span>
         </div>
@@ -2405,34 +2408,33 @@ body {
                  here by initRadarOverlay() after Leaflet's own DOM is in
                  place. Empty placeholder is OK; JS finds and fills it. -->
           </div>
-          <!-- iPad-only forecast overlay (24h sparklines pinned over the
-               top-right of the map). Hidden on phone via display:none. -->
+          <!-- iPad-only forecast strip pinned at the top of the radar card.
+               Mirrors the original iPad app's forecast-strip placement:
+               full-width horizontal band over the top of the map. Just
+               rain + wind, since temp is the giant number in the sidebar
+               already. Hidden on phone via display:none. -->
           <div class="ipad-forecast-overlay" id="ipad-forecast-overlay" style="display:none">
-            <div class="card-header">
+            <div class="ipad-fc-head">
               <h2>Täna · 24h</h2>
               <span class="meta">Saju alguseni: <strong id="rain-start-ipad" class="mono">—</strong></span>
             </div>
-            <div class="forecast-row">
-              <div class="forecast-row-head">
-                <span class="forecast-row-label">Temp</span>
-                <span class="forecast-row-sub" id="temp-spark-sub-ipad">—</span>
+            <div class="ipad-fc-row">
+              <span class="ipad-fc-label">Sadu</span>
+              <div class="ipad-fc-spark">
+                <div class="metric-spark" id="spark-rain-ipad" aria-hidden="true"></div>
               </div>
-              <div class="metric-spark" id="spark-temp-ipad" aria-hidden="true"></div>
+              <span class="ipad-fc-sub" id="rain-sub-ipad">—</span>
             </div>
-            <div class="forecast-row">
-              <div class="forecast-row-head">
-                <span class="forecast-row-label">Sadu</span>
-                <span class="forecast-row-sub" id="rain-sub-ipad">—</span>
+            <div class="ipad-fc-row">
+              <span class="ipad-fc-label">Tuul</span>
+              <div class="ipad-fc-spark">
+                <div class="metric-spark" id="spark-wind-ipad" aria-hidden="true"></div>
+                <!-- Wind direction arrows below the bars — same colour as
+                     the streamlines drawn on the map so the two reads as
+                     one continuous indicator -->
+                <div class="metric-spark-dirs" id="dirs-wind-ipad" aria-hidden="true"></div>
               </div>
-              <div class="precip-type-row" id="precip-types-ipad" aria-hidden="true"></div>
-              <div class="metric-spark" id="spark-rain-ipad" aria-hidden="true"></div>
-            </div>
-            <div class="forecast-row">
-              <div class="forecast-row-head">
-                <span class="forecast-row-label">Tuul</span>
-                <span class="forecast-row-sub" id="wind-spark-sub-ipad">—</span>
-              </div>
-              <div class="metric-spark" id="spark-wind-ipad" aria-hidden="true"></div>
+              <span class="ipad-fc-sub" id="wind-spark-sub-ipad">—</span>
             </div>
           </div>
           <!-- Zoom-preset row — bottom-center of the map -->
@@ -3476,7 +3478,9 @@ function renderWarnings(data){
   if(!el) return;
   var arr = (data && data.warnings) || [];
   if(arr.length === 0){
-    el.className = 'alert';
+    // No active warnings — keep the "kõik korras" pill on phone, but
+    // tag it so iPad landscape CSS can hide the otherwise-empty row.
+    el.className = 'alert warning-bar-empty';
     el.style.color = '';
     el.style.background = '';
     el.style.border = '';
@@ -4584,6 +4588,16 @@ function initIpadEnhancements(){
   var ov = document.getElementById('ipad-forecast-overlay');
   if(ov) ov.style.display = '';
 
+  // iPad rain row defaults to mm/h (actual amount) rather than the phone
+  // version's "tõenäosus" (probability) — that's what you want when you're
+  // already staring at the radar map and the question is "how much will
+  // fall", not "how likely is it". setRainMode also re-renders the bars.
+  if(typeof setRainMode === 'function'){
+    setRainMode('mm');
+    // Re-clone after the phone bars repaint into the now-active mm view
+    setTimeout(renderIpadSparklines, 100);
+  }
+
   // Capture the original Positron tile layer reference so we can flip
   // between it and satellite when the user taps MAP / SAT
   RADAR.map.eachLayer(function(layer){
@@ -4846,20 +4860,35 @@ function updateSunOverlays(){ drawOverlay(); }
  * ═══════════════════════════════════════════════════════════════════════ */
 function renderIpadSparklines(){
   if(!IPAD.active) return;
+
+  // Mirror the bars
   var pairs = [
-    ['spark-temp', 'spark-temp-ipad'],
     ['spark-rain', 'spark-rain-ipad'],
-    ['spark-wind', 'spark-wind-ipad'],
-    ['precip-types', 'precip-types-ipad']
+    ['spark-wind', 'spark-wind-ipad']
   ];
   pairs.forEach(function(p){
     var src = document.getElementById(p[0]);
     var dst = document.getElementById(p[1]);
     if(src && dst && src.innerHTML){ dst.innerHTML = src.innerHTML; }
   });
-  // Mirror the sub-line captions (max temp · kl HH etc.)
+
+  // Mirror the wind direction arrow row — it's a sibling of #spark-wind
+  // in the phone forecast card. Find it by walking forward through
+  // siblings until we hit a .metric-spark-dirs.
+  var srcWind = document.getElementById('spark-wind');
+  var dstDirs = document.getElementById('dirs-wind-ipad');
+  if(srcWind && dstDirs){
+    var sib = srcWind.nextElementSibling, found = null;
+    while(sib){
+      if(sib.classList && sib.classList.contains('metric-spark-dirs')){ found = sib; break; }
+      sib = sib.nextElementSibling;
+    }
+    if(found){ dstDirs.innerHTML = found.innerHTML; dstDirs.style.display = ''; }
+    else     { dstDirs.innerHTML = ''; }
+  }
+
+  // Mirror sub captions
   var subPairs = [
-    ['temp-spark-sub', 'temp-spark-sub-ipad'],
     ['rain-sub',       'rain-sub-ipad'],
     ['wind-spark-sub', 'wind-spark-sub-ipad'],
     ['rain-start',     'rain-start-ipad']
@@ -4887,10 +4916,8 @@ function renderIpadSparklines(){
   };
   document.addEventListener('DOMContentLoaded', function(){
     setTimeout(function(){
-      observeTarget('spark-temp');
       observeTarget('spark-rain');
       observeTarget('spark-wind');
-      observeTarget('precip-types');
     }, 1500);
   });
 })();
