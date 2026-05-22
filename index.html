@@ -1972,12 +1972,11 @@ body {
   .radar-timeline { margin-top: 8px; flex-shrink: 0; }
   .radar-status   { margin-top: 4px; flex-shrink: 0; }
 
-  /* Precipitation colour legend — small glass chip floating in the
-   * top-left of the map, just under Leaflet's zoom controls. Static,
-   * pointer-events:none so it never intercepts pan. */
+  /* Precipitation colour legend — small glass chip in the map's
+   * top-right corner. Static, pointer-events:none. */
   .precip-legend {
     position: absolute;
-    top: 86px; left: 10px;
+    top: 10px; right: 10px;
     z-index: 500;
     padding: 6px 9px 7px;
     background: rgba(10,12,16,0.78);
