@@ -1,0 +1,64 @@
+name: Fetch Kurevere snapshot
+
+# Every 15 min pull the Kurevere road-weather reading from tarktee.mnt.ee
+# server-side and force-push it to a 'data' orphan branch. The iPad reads
+# the bundle via raw.githubusercontent.com (CORS-open and reliably
+# reachable from this device, unlike tarktee directly).
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+  # First deploy + script edits should populate the data branch immediately
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fetch_kurevere.py'
+      - '.github/workflows/kurevere.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kurevere-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch Kurevere snapshot
+        run: |
+          python3 scripts/fetch_kurevere.py --out /tmp/kurevere.json
+          echo "--- snapshot ---"
+          cat /tmp/kurevere.json
+
+      - name: Push to data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          cd "$tmp"
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp /tmp/kurevere.json kurevere.json
+          git add kurevere.json
+          git commit -q -m "data: Kurevere snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          # Note: force-push REPLACES the 'data' branch entirely. If you
+          # later add other JSON bundles to this same branch, fetch the
+          # current data branch first and merge rather than overwriting.
+          git push -q --force origin data:data
+          echo "✓ Pushed snapshot to 'data' branch"
+          echo "  Raw URL: https://raw.githubusercontent.com/${{ github.repository }}/data/kurevere.json"

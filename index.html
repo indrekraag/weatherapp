@@ -3606,19 +3606,23 @@ function fetchLaaneNigula(){
   fetchLaaneNigulaFrom(EMHI_LOCAL_URL, function(){ fetchLaaneNigulaFrom(EMHI_REMOTE_URL); });
 }
 function fetchKurevere(){
-  /* On the live GitHub-Pages build, tarktee.mnt.ee answers cross-origin
-   * requests fine — the phone weatherapp2 uses the same direct URL.
-   * On the iPad-kiosk LAN setup though, fetching tarktee from an HTTP
-   * server-on-LAN-IP was unreliable (some combination of Safari CORS
-   * quirks + network paths). The local Python server (server.py) proxies
-   * `/api/kurevere` server-side so the iPad sees a same-origin response
-   * with permissive CORS. We try that first, fall through to the direct
-   * URL otherwise. */
+  /* Routing, in preference order:
+   *   1. github.io build → the wa1 `data` branch bundle on
+   *      raw.githubusercontent.com (populated server-side by the
+   *      GH Actions cron in .github/workflows/kurevere.yml). The
+   *      iPad refused to reach tarktee.mnt.ee directly even though
+   *      curl + macOS Safari + iPhone Safari all do — likely a
+   *      content blocker / stricter TLS profile on that specific
+   *      device. Routing via GitHub's CDN (which the iPad already
+   *      reaches happily for the EMHI bundle) sidesteps it.
+   *   2. Local dev (HTTP-on-LAN-IP) → /api/kurevere proxy served
+   *      by server.py — same reason, plus avoids the upstream's
+   *      sometimes-flaky CORS for non-public origins.
+   *   3. Fallback to the direct tarktee URL if both fail (still
+   *      useful on a Mac / iPhone / where direct CORS works). */
   var isGitHubPages = /\.github\.io$/i.test(location.hostname);
   var url = isGitHubPages
-    ? ('https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/MapServer/0/query'
-        + '?where=' + encodeURIComponent("site_name='Kurevere'")
-        + '&outFields=*&f=json')
+    ? 'https://raw.githubusercontent.com/indrekraag/weatherapp/data/kurevere.json'
     : '/api/kurevere';
   var status = function(msg){
     // Show fetch state inside the Kurevere chip so iPad failures are
