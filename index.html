@@ -1972,6 +1972,45 @@ body {
   .radar-timeline { margin-top: 8px; flex-shrink: 0; }
   .radar-status   { margin-top: 4px; flex-shrink: 0; }
 
+  /* Precipitation colour legend — small glass chip floating in the
+   * top-left of the map, just under Leaflet's zoom controls. Static,
+   * pointer-events:none so it never intercepts pan. */
+  .precip-legend {
+    position: absolute;
+    top: 86px; left: 10px;
+    z-index: 500;
+    padding: 6px 9px 7px;
+    background: rgba(10,12,16,0.78);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    pointer-events: none;
+    font-family: -apple-system, "SF Pro Display", sans-serif;
+    color: rgba(255,255,255,0.82);
+  }
+  .precip-legend-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.92);
+    margin-bottom: 4px;
+  }
+  .precip-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .precip-sw {
+    width: 9px; height: 9px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.30) inset;
+  }
+
   /* Zoom-preset buttons — small pill row floating over the bottom-center
    * of the map. Same accent-amber treatment as .radar-mode-btn so they
    * read as part of the same control family. */
@@ -2453,6 +2492,17 @@ body {
           <!-- (The iPad-specific forecast overlay was removed once the
                full forecast card moved into the left sidebar — same
                sparklines, same axis, just in their natural spot.) -->
+          <!-- Precipitation colour legend — floats at the top-left of the
+               map, anchored under Leaflet's zoom control. Static chip,
+               no animation, no JS needed beyond pointer-events:none. -->
+          <div class="precip-legend" id="precip-legend">
+            <div class="precip-legend-title">Sadu</div>
+            <div class="precip-legend-row"><span class="precip-sw" style="background:#3da9f5"></span>Kerge</div>
+            <div class="precip-legend-row"><span class="precip-sw" style="background:#3edd5f"></span>Mõõdukas</div>
+            <div class="precip-legend-row"><span class="precip-sw" style="background:#f5d83a"></span>Tugev</div>
+            <div class="precip-legend-row"><span class="precip-sw" style="background:#e8533b"></span>Väga tugev</div>
+          </div>
+
           <!-- Zoom-preset row — bottom-center of the map -->
           <div class="zoom-presets" id="zoom-presets">
             <button class="zoom-btn" onclick="ipadZoom(18)">50m</button>
@@ -2463,6 +2513,11 @@ body {
             <span class="zoom-sep"></span>
             <button class="zoom-btn" onclick="ipadBaseMap('light')" id="ipad-base-light">MAP</button>
             <button class="zoom-btn active" onclick="ipadBaseMap('satellite')" id="ipad-base-sat">SAT</button>
+            <span class="zoom-sep"></span>
+            <!-- IR cloud-tops overlay (RainViewer satellite tiles) on top
+                 of the base map. Useful pre-dawn / overnight when the
+                 radar's quiet but cloud cover still matters. -->
+            <button class="zoom-btn" onclick="ipadToggleClouds()" id="ipad-clouds">PILV</button>
           </div>
           <!-- Timeline bar -->
           <div class="radar-timeline">
@@ -4533,6 +4588,12 @@ function radarApplyData(data){
 
   radarShowFrame(RADAR.frameIdx);
 
+  // Refresh the IR-cloud overlay too if it's been toggled on — the
+  // satellite frames update on the same 5-min cadence as radar.
+  if(typeof ipadApplyClouds === 'function' && typeof IPAD !== 'undefined' && IPAD.cloudsOn){
+    ipadApplyClouds();
+  }
+
   // Auto-play once frames are loaded — radar is meant to be
   // ambient/animated by default on the kiosk. Guard prevents
   // re-starting if the user has manually paused.
@@ -4639,6 +4700,8 @@ var IPAD = {
   active: false,
   satLayer: null,
   baseLayer: null,
+  cloudLayer: null,          // RainViewer IR-cloud tile layer (toggle)
+  cloudsOn: false,
   windDir: null,
   windSpeed: null,
   windGust: null,
@@ -4799,6 +4862,43 @@ function ipadBaseMap(mode){
   var lt  = document.getElementById('ipad-base-light');
   if(sat) sat.classList.toggle('active', mode === 'satellite');
   if(lt)  lt.classList.toggle('active',  mode !== 'satellite');
+}
+
+/* Toggle the RainViewer IR-cloud overlay on top of whatever base map +
+ * radar tiles are currently active. Useful pre-dawn / overnight when
+ * the radar's quiet but cloud cover still matters. The layer uses
+ * RainViewer's satellite frames (same API endpoint that returns the
+ * radar frames); we pick the latest available frame and refresh on
+ * each radar data poll. Opacity kept low so the radar still reads
+ * through it. */
+function ipadToggleClouds(){
+  if(!RADAR.map) return;
+  IPAD.cloudsOn = !IPAD.cloudsOn;
+  var btn = document.getElementById('ipad-clouds');
+  if(btn) btn.classList.toggle('active', IPAD.cloudsOn);
+  if(IPAD.cloudsOn){
+    ipadApplyClouds();
+  } else if(IPAD.cloudLayer){
+    RADAR.map.removeLayer(IPAD.cloudLayer);
+    IPAD.cloudLayer = null;
+  }
+}
+function ipadApplyClouds(){
+  if(!IPAD.cloudsOn || !RADAR.map || !RADAR.apiData) return;
+  var sat = (RADAR.apiData.satellite && RADAR.apiData.satellite.infrared) || [];
+  if(!sat.length) return;
+  var frame = sat[sat.length - 1];          // latest available IR frame
+  var host  = RADAR.apiData.host || 'https://tilecache.rainviewer.com';
+  var url   = host + frame.path + '/256/{z}/{x}/{y}/0/0_0.png';
+  if(IPAD.cloudLayer){ RADAR.map.removeLayer(IPAD.cloudLayer); }
+  IPAD.cloudLayer = L.tileLayer(url, {
+    tileSize: 256,
+    opacity: 0.55,
+    zIndex: 9,                              // below radar's zIndex 10
+    maxNativeZoom: 7,
+    maxZoom: 19
+  });
+  IPAD.cloudLayer.addTo(RADAR.map);
 }
 
 function ipadZoom(z){
@@ -5054,7 +5154,10 @@ function drawOverlay(){
       arcEndpoint(samples[samples.length-1], samples[samples.length-1].az, ssTime, 'set',  SS_COLOR);
     }
 
-    // Current sun position — glowing disc on the arc
+    // Current sun position — glowing disc on the arc with altitude label.
+    // The altitude (degrees above horizon) sits radially OUTSIDE the disc
+    // so it doesn't crowd the arc itself. Same time-label visual style
+    // as the rise/set endpoints — mono font, off-white, dark stroke halo.
     if(nowPt){
       parts.push('<circle cx="'+nowPt.x.toFixed(1)+'" cy="'+nowPt.y.toFixed(1)+
                  '" r="14" fill="rgba(255,222,98,0.18)"/>');
@@ -5062,6 +5165,66 @@ function drawOverlay(){
                  '" r="7"  fill="rgba(0,0,0,0.55)"/>');
       parts.push('<circle cx="'+nowPt.x.toFixed(1)+'" cy="'+nowPt.y.toFixed(1)+
                  '" r="5.5" fill="'+SUN_COLOR+'"/>');
+      var spNow = solarPosition(new Date(), CONFIG.lat, CONFIG.lng);
+      if(spNow && typeof spNow.altitude === 'number'){
+        var altLbl = anglePx(spNow.azimuth, sunRingR + 22, cx, cy);
+        parts.push('<text x="'+altLbl.x.toFixed(1)+'" y="'+altLbl.y.toFixed(1)+
+                   '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                   ' fill="rgba(255,235,210,1)"' +
+                   ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                   ' text-anchor="middle" dominant-baseline="central">' +
+                   Math.round(spNow.altitude) + '°</text>');
+      }
+    }
+  }
+
+  // ── MOON arc — drawn only when the moon is above the horizon at
+  // some point today. Uses the same arc-trace approach as the sun, in
+  // a cool blue tint so it's visually distinct. We sample around the
+  // local 24-hour window so the moon's arc is captured even when it
+  // straddles midnight (rises evening, sets next morning). ──
+  var moonRingR = sunRingR * 0.94;          // slightly smaller than sun ring
+  if(typeof moonPosition === 'function'){
+    var MOON_COLOR     = 'rgba(180,210,255,0.95)';
+    var MOON_DIM_COLOR = 'rgba(180,210,255,0.40)';
+    var MOON_HALO      = 'rgba(0,0,0,0.55)';
+    var winStart = Date.now() - 12 * 3600 * 1000;
+    var winEnd   = Date.now() + 12 * 3600 * 1000;
+    var moonSamples = [];
+    for(var mt = winStart; mt <= winEnd; mt += 6 * 60 * 1000){
+      var mp = moonPosition(new Date(mt), CONFIG.lat, CONFIG.lng);
+      if(mp && typeof mp.azimuth === 'number' && mp.altitude > 0){
+        var mPt = anglePx(mp.azimuth, moonRingR, cx, cy);
+        moonSamples.push({ t: mt, x: mPt.x, y: mPt.y, az: mp.azimuth, alt: mp.altitude });
+      }
+    }
+    if(moonSamples.length >= 2){
+      var mPath = moonSamples.map(function(p, i){
+        return (i === 0 ? 'M ' : 'L ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+      }).join(' ');
+      // Halo behind the arc for legibility against satellite tiles
+      parts.push('<path d="'+mPath+'" fill="none" stroke="'+MOON_HALO+'" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 4"/>');
+      parts.push('<path d="'+mPath+'" fill="none" stroke="'+MOON_DIM_COLOR+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 4"/>');
+
+      // Current moon position — only if currently above the horizon
+      var mNow = moonPosition(new Date(), CONFIG.lat, CONFIG.lng);
+      if(mNow && mNow.altitude > 0){
+        var mNowPt = anglePx(mNow.azimuth, moonRingR, cx, cy);
+        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+
+                   '" r="11" fill="rgba(180,210,255,0.16)"/>');
+        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+
+                   '" r="5.5" fill="rgba(0,0,0,0.55)"/>');
+        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+
+                   '" r="4.2" fill="'+MOON_COLOR+'"/>');
+        // Altitude label just outside the disc, same style as the sun
+        var mLbl = anglePx(mNow.azimuth, moonRingR + 20, cx, cy);
+        parts.push('<text x="'+mLbl.x.toFixed(1)+'" y="'+mLbl.y.toFixed(1)+
+                   '" font-family="ui-monospace, SF Mono, monospace" font-size="11" font-weight="700"' +
+                   ' fill="rgba(210,225,250,1)"' +
+                   ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                   ' text-anchor="middle" dominant-baseline="central">' +
+                   Math.round(mNow.altitude) + '°</text>');
+      }
     }
   }
 
