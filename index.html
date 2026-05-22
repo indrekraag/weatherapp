@@ -1806,18 +1806,26 @@ body {
   .duo-air,
   .footer { display: none !important; }
 
-  /* Warning bar — full-width row at the top, only visible if there ARE
-   * active warnings. When empty, .warning-bar-empty is added by
-   * renderWarnings() and we collapse the row entirely so the hero +
-   * radar get the extra vertical space. */
+  /* Warning bar — full-width row at the top. Always visible: when no
+   * active CAP warnings are in the EMHI bundle the bar shows a muted
+   * "✓ Hoiatused puuduvad" pill (system-watching status). When a
+   * warning lands it switches to the severity colour automatically. */
   #warning-bar {
     grid-column: 1 / -1;
     grid-row: 1;
-    padding: 6px 14px;
+    padding: 5px 14px;
     min-height: 0;
     border-radius: 12px;
   }
-  #warning-bar.warning-bar-empty { display: none !important; }
+  /* When idle, dim the "Hoiatused puuduvad" pill so it reads as a
+   * status indicator rather than competing with active content. */
+  #warning-bar.warning-bar-empty {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.55);
+    font-size: 11px;
+  }
+  #warning-bar.warning-bar-empty .alert-icon { color: var(--ok); opacity: 0.85; }
 
   /* LEFT COLUMN — spans rows 2-3 so it stretches to the top, full height.
    * Inside .ipad-left-col we flex hero + forecast-card vertically.
