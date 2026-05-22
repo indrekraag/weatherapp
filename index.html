@@ -4926,19 +4926,24 @@ function drawOverlay(){
   if(IPAD.srAz !== null) sunRay(IPAD.srAz, SR_COLOR, 'arr-sr', srTime, 'rise');
   if(IPAD.ssAz !== null) sunRay(IPAD.ssAz, SS_COLOR, 'arr-ss', ssTime, 'set');
 
-  // Current sun position (daytime only) — solid amber arrow, ~55% of
-  // the rise/set ray length so it reads as "between" the two endpoints.
-  if(IPAD.sunProgress !== null && IPAD.srAz !== null && IPAD.ssAz !== null){
-    var sweep = (IPAD.ssAz - IPAD.srAz + 360) % 360;
-    if(sweep > 180) sweep -= 360;
-    var sunAz = (IPAD.srAz + sweep * IPAD.sunProgress + 360) % 360;
-    var sTip = anglePx(sunAz, sunLen * 0.55, cx, cy);
-    var sx1 = cx.toFixed(1), sy1 = cy.toFixed(1),
-        sx2 = sTip.x.toFixed(1), sy2 = sTip.y.toFixed(1);
-    parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
-               '" stroke="rgba(0,0,0,0.55)" stroke-width="3.2" stroke-linecap="round"/>');
-    parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
-               '" stroke="'+SUN_COLOR+'" stroke-width="1.8" stroke-linecap="round" marker-end="url(#arr-sun)"/>');
+  // Current sun position (daytime only). The earlier version linearly
+  // interpolated between sunrise and sunset azimuths, which sent the
+  // arrow over the WRONG horizon (through North for an NE-rising,
+  // NW-setting summer sun). solarPosition() returns the true current
+  // azimuth so the arrow always points where the sun actually is —
+  // east in the morning, south around noon, west in the evening.
+  if(IPAD.sunProgress !== null && typeof solarPosition === 'function'){
+    var sp = solarPosition(new Date(), CONFIG.lat, CONFIG.lng);
+    if(sp && typeof sp.azimuth === 'number' && sp.altitude > 0){
+      var sunAz = sp.azimuth;
+      var sTip = anglePx(sunAz, sunLen * 0.55, cx, cy);
+      var sx1 = cx.toFixed(1), sy1 = cy.toFixed(1),
+          sx2 = sTip.x.toFixed(1), sy2 = sTip.y.toFixed(1);
+      parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
+                 '" stroke="rgba(0,0,0,0.55)" stroke-width="3.2" stroke-linecap="round"/>');
+      parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
+                 '" stroke="'+SUN_COLOR+'" stroke-width="1.8" stroke-linecap="round" marker-end="url(#arr-sun)"/>');
+    }
   }
 
   svg.innerHTML = parts.join('');
