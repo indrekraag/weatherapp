@@ -1660,16 +1660,11 @@ body {
   transition: background 0.12s;
 }
 .radar-ctrl-btn:active { background: rgba(255,255,255,0.14); }
-.radar-scrub-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
 .radar-scrub {
   -webkit-appearance: none;
   appearance: none;
-  width: 100%;
+  flex: 1;                 /* fills the space between play btn and time label */
+  min-width: 0;
   height: 4px;
   border-radius: 2px;
   background: rgba(255,255,255,0.12);
@@ -1695,11 +1690,14 @@ body {
 }
 .radar-time-label {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 10px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.65);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.80);
+  flex-shrink: 0;
+  text-align: right;
+  min-width: 60px;
+  margin-left: 8px;
   letter-spacing: 0.3px;
-  text-align: center;
 }
 .radar-status {
   font-size: 10px;
@@ -2129,6 +2127,12 @@ body {
 </head>
 <body>
 
+<!-- Optional: OpenWeatherMap API key for the cloud-cover overlay (PILV
+     button on the radar map). Free key from https://openweathermap.org/api
+     — paste it below and uncomment to enable. Without a key, the button
+     stays hidden and nothing else changes. -->
+<script>/* window.OWM_KEY = 'paste-your-free-openweathermap-key-here'; */</script>
+
 <div class="app">
 
         <!-- ALERT — now the top card. Standalone status pill, replaces
@@ -2485,24 +2489,24 @@ body {
             <h2 id="radar-card-title">Vihmaradar</h2>
           </div>
           <!-- Map container. Inline height kept as a phone fallback;
-               iPad layout overrides it to flex:1. -->
+               iPad layout overrides it to flex:1. The precip legend
+               and the wind/sun SVG overlays live INSIDE this div so
+               they position relative to the actual map area (Leaflet
+               makes the container position:relative), mirroring the
+               +/- zoom control on the opposite top corner. -->
           <div id="radar-map" style="height:260px;border-radius:12px;overflow:hidden;background:#0a0a0c;">
+            <!-- Precipitation colour legend — top-right corner of the
+                 map, mirrors the Leaflet +/- block on the top-left. -->
+            <div class="precip-legend" id="precip-legend">
+              <div class="precip-legend-title">Sadu</div>
+              <div class="precip-legend-row"><span class="precip-sw" style="background:#3da9f5"></span>Kerge</div>
+              <div class="precip-legend-row"><span class="precip-sw" style="background:#3edd5f"></span>Mõõdukas</div>
+              <div class="precip-legend-row"><span class="precip-sw" style="background:#f5d83a"></span>Tugev</div>
+              <div class="precip-legend-row"><span class="precip-sw" style="background:#e8533b"></span>Väga tugev</div>
+            </div>
             <!-- SVG overlay (wind arrows + sun rise/set lines) injected
-                 here by initRadarOverlay() after Leaflet's own DOM is in
-                 place. Empty placeholder is OK; JS finds and fills it. -->
-          </div>
-          <!-- (The iPad-specific forecast overlay was removed once the
-               full forecast card moved into the left sidebar — same
-               sparklines, same axis, just in their natural spot.) -->
-          <!-- Precipitation colour legend — floats at the top-left of the
-               map, anchored under Leaflet's zoom control. Static chip,
-               no animation, no JS needed beyond pointer-events:none. -->
-          <div class="precip-legend" id="precip-legend">
-            <div class="precip-legend-title">Sadu</div>
-            <div class="precip-legend-row"><span class="precip-sw" style="background:#3da9f5"></span>Kerge</div>
-            <div class="precip-legend-row"><span class="precip-sw" style="background:#3edd5f"></span>Mõõdukas</div>
-            <div class="precip-legend-row"><span class="precip-sw" style="background:#f5d83a"></span>Tugev</div>
-            <div class="precip-legend-row"><span class="precip-sw" style="background:#e8533b"></span>Väga tugev</div>
+                 here by initIpadEnhancements() after Leaflet's own DOM
+                 is in place. -->
           </div>
 
           <!-- Zoom-preset row — bottom-center of the map -->
@@ -2516,18 +2520,17 @@ body {
             <button class="zoom-btn" onclick="ipadBaseMap('light')" id="ipad-base-light">MAP</button>
             <button class="zoom-btn active" onclick="ipadBaseMap('satellite')" id="ipad-base-sat">SAT</button>
             <span class="zoom-sep"></span>
-            <!-- IR cloud-tops overlay (RainViewer satellite tiles) on top
-                 of the base map. Useful pre-dawn / overnight when the
-                 radar's quiet but cloud cover still matters. -->
-            <button class="zoom-btn" onclick="ipadToggleClouds()" id="ipad-clouds">PILV</button>
+            <!-- Cloud-cover overlay from OpenWeatherMap (clouds_new
+                 tile layer). Free tier needs an API key — set
+                 window.OWM_KEY in a config <script> tag and the
+                 button appears. Hidden when no key. -->
+            <button class="zoom-btn" onclick="ipadToggleOwmClouds()" id="ipad-owm-clouds" style="display:none">PILV</button>
           </div>
           <!-- Timeline bar -->
           <div class="radar-timeline">
             <button class="radar-ctrl-btn" id="radar-play" title="Mängi / Peata">▶</button>
-            <div class="radar-scrub-wrap">
-              <input type="range" class="radar-scrub" id="radar-scrub" min="0" value="0" step="1">
-              <div class="radar-time-label" id="radar-time-label">—</div>
-            </div>
+            <input type="range" class="radar-scrub" id="radar-scrub" min="0" value="0" step="1">
+            <div class="radar-time-label" id="radar-time-label">—</div>
           </div>
           <div class="radar-status" id="radar-status">Laen radaripilte…</div>
         </div>
@@ -4595,15 +4598,9 @@ function radarApplyData(data){
   if(typeof ipadApplyClouds === 'function' && typeof IPAD !== 'undefined' && IPAD.cloudsOn){
     ipadApplyClouds();
   }
-  // Hide the PILV (cloud-tops) button when RainViewer's public API
-  // isn't currently serving any satellite IR frames — their endpoint
-  // returns an empty array intermittently so the button would do
-  // nothing. It re-appears when frames repopulate.
-  var pilvBtn = document.getElementById('ipad-clouds');
-  if(pilvBtn){
-    var hasSat = data.satellite && data.satellite.infrared && data.satellite.infrared.length;
-    pilvBtn.style.display = hasSat ? '' : 'none';
-  }
+  // (RainViewer's PILV button removed — their satellite IR array
+  // comes back empty often enough that an OpenWeatherMap-backed
+  // cloud overlay is more reliable. See ipadToggleOwmClouds.)
 
   // Auto-play once frames are loaded — radar is meant to be
   // ambient/animated by default on the kiosk. Guard prevents
@@ -4736,6 +4733,12 @@ function initIpadEnhancements(){
   // default "tõenäosus" (probability) — when you're staring at the radar
   // map the relevant question is amount, not likelihood.
   if(typeof setRainMode === 'function'){ setRainMode('mm'); }
+
+  // Reveal the OpenWeatherMap clouds button only when a key is set.
+  if(window.OWM_KEY){
+    var owmBtn = document.getElementById('ipad-owm-clouds');
+    if(owmBtn) owmBtn.style.display = '';
+  }
 
   // Capture the original Positron tile layer reference so we can flip
   // between it and satellite when the user taps MAP / SAT
@@ -4893,6 +4896,29 @@ function ipadToggleClouds(){
     RADAR.map.removeLayer(IPAD.cloudLayer);
     IPAD.cloudLayer = null;
   }
+}
+
+/* OpenWeatherMap cloud-cover overlay (separate from RainViewer's IR).
+ * Tile URL: tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=
+ * Requires a free API key (set as window.OWM_KEY). Button is hidden
+ * via JS-init when no key is configured. */
+function ipadToggleOwmClouds(){
+  if(!RADAR.map || !window.OWM_KEY) return;
+  if(IPAD.owmCloudLayer){
+    RADAR.map.removeLayer(IPAD.owmCloudLayer);
+    IPAD.owmCloudLayer = null;
+    var bOff = document.getElementById('ipad-owm-clouds');
+    if(bOff) bOff.classList.remove('active');
+    return;
+  }
+  IPAD.owmCloudLayer = L.tileLayer(
+    'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=' + window.OWM_KEY,
+    { tileSize: 256, opacity: 0.6, zIndex: 9, maxZoom: 19, attribution: '© <a href="https://openweathermap.org/">OpenWeatherMap</a>' }
+  );
+  IPAD.owmCloudLayer.addTo(RADAR.map);
+  if(RADAR.currentLayer) RADAR.currentLayer.bringToFront();
+  var bOn = document.getElementById('ipad-owm-clouds');
+  if(bOn) bOn.classList.add('active');
 }
 function ipadApplyClouds(){
   if(!IPAD.cloudsOn || !RADAR.map || !RADAR.apiData) return;
