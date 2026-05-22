@@ -3606,10 +3606,20 @@ function fetchLaaneNigula(){
   fetchLaaneNigulaFrom(EMHI_LOCAL_URL, function(){ fetchLaaneNigulaFrom(EMHI_REMOTE_URL); });
 }
 function fetchKurevere(){
-  var url = 'https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/MapServer/0/query'
-    + '?where=' + encodeURIComponent("site_name='Kurevere'")
-    + '&outFields=*'
-    + '&f=json';
+  /* On the live GitHub-Pages build, tarktee.mnt.ee answers cross-origin
+   * requests fine — the phone weatherapp2 uses the same direct URL.
+   * On the iPad-kiosk LAN setup though, fetching tarktee from an HTTP
+   * server-on-LAN-IP was unreliable (some combination of Safari CORS
+   * quirks + network paths). The local Python server (server.py) proxies
+   * `/api/kurevere` server-side so the iPad sees a same-origin response
+   * with permissive CORS. We try that first, fall through to the direct
+   * URL otherwise. */
+  var isGitHubPages = /\.github\.io$/i.test(location.hostname);
+  var url = isGitHubPages
+    ? ('https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/MapServer/0/query'
+        + '?where=' + encodeURIComponent("site_name='Kurevere'")
+        + '&outFields=*&f=json')
+    : '/api/kurevere';
   var status = function(msg){
     // Show fetch state inside the Kurevere chip so iPad failures are
     // visible without the dev console.
