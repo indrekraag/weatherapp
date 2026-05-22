@@ -2157,10 +2157,12 @@ body {
           <span>Hoiatused puuduvad</span>
         </div>
 
-        <!-- iPad left column wrapper. `display:contents` on phone (it
-             vanishes so children act as direct siblings of .app — phone
-             layout untouched). In iPad landscape it becomes a flex column
-             so hero + forecast-card stack vertically inside grid cell. -->
+        <!-- iPad left column wrapper. `display: contents` on phone (so
+             children fall through as direct flex items of .app — phone
+             layout unchanged). In iPad landscape it becomes a flex
+             column anchored at col 1 rows 2-3, so hero + forecast
+             stack in a single grid cell without forecast falling into
+             a phantom auto-row below the viewport. -->
         <div class="ipad-left-col">
 
         <!-- HERO -->
