@@ -1930,14 +1930,44 @@ body {
   }
   /* SVG overlay that draws wind & sun direction lines on top of the map.
    * Sits in the same stacking context as the Leaflet tile container but
-   * has pointer-events:none so it never intercepts pan/zoom gestures. */
+   * has pointer-events:none so it never intercepts pan/zoom gestures.
+   *
+   * Two layers, both positioned absolutely over the map:
+   *   #wind-particle-overlay — persistent, faint dots drifting downwind
+   *                            (created once so CSS keyframes don't reset)
+   *   #map-overlay           — sun arc + arrows + labels, re-rendered
+   *                            each frame */
+  #wind-particle-overlay,
   #map-overlay {
     position: absolute;
     inset: 0;
     width: 100%; height: 100%;
     pointer-events: none;
-    z-index: 400;
     overflow: visible;
+  }
+  #wind-particle-overlay { z-index: 399; }
+  #map-overlay           { z-index: 400; }
+
+  /* Faint blue-cyan dashes drifting along the wind direction. The group
+   * is rotated by JS to match the current downwind bearing; each particle
+   * has its own keyframe-driven X translation and randomised animation-
+   * delay so the stream feels continuous rather than synchronised.
+   * Duration is set inline (--wind-dur CSS var) based on wind speed. */
+  @keyframes wind-drift {
+    0%   { transform: translateX(-480px); opacity: 0; }
+    12%  { opacity: 0.55; }
+    88%  { opacity: 0.55; }
+    100% { transform: translateX(480px);  opacity: 0; }
+  }
+  .wind-particle {
+    animation-name: wind-drift;
+    animation-duration: var(--wind-dur, 8s);
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: transform, opacity;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wind-particle { animation: none; opacity: 0.25; }
   }
   .radar-timeline { margin-top: 8px; flex-shrink: 0; }
   .radar-status   { margin-top: 4px; flex-shrink: 0; }
@@ -4650,13 +4680,44 @@ function initIpadEnhancements(){
   // Default to satellite (closer to the original iPad design language)
   ipadBaseMap('satellite');
 
-  // Inject an SVG overlay container directly inside the Leaflet map div
-  // so it lives in the same stacking context but never grabs touches.
+  // Inject two SVG overlay layers inside the Leaflet map div so they
+  // share the same stacking context but never grab touches.
+  // - Persistent particles layer (created once so CSS keyframes don't
+  //   restart on every redraw)
+  // - Map-arrows layer (rebuilt via innerHTML each frame)
   var mapDiv = document.getElementById('radar-map');
-  if(mapDiv && !document.getElementById('map-overlay')){
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.id = 'map-overlay';
-    mapDiv.appendChild(svg);
+  if(mapDiv){
+    if(!document.getElementById('wind-particle-overlay')){
+      var psvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      psvg.id = 'wind-particle-overlay';
+      // One <g> we rotate to point downwind; particles live inside.
+      // 14 thin dashes is enough to feel like a stream without becoming
+      // visual noise that competes with the radar / sun arc.
+      var pg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      pg.id = 'wind-particle-group';
+      for(var i = 0; i < 14; i++){
+        var r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r.setAttribute('class', 'wind-particle');
+        r.setAttribute('width',  '16');
+        r.setAttribute('height', '1.4');
+        r.setAttribute('rx', '0.7');
+        r.setAttribute('fill', 'rgba(150,210,250,0.75)');
+        r.setAttribute('x', '-8');
+        // Spread particles vertically (perpendicular to the rotated drift)
+        // and offset their animation phase so they don't pulse in sync.
+        var y = (Math.random() - 0.5) * 520;
+        r.setAttribute('y', y.toFixed(1));
+        r.style.animationDelay = (-Math.random() * 8).toFixed(2) + 's';
+        pg.appendChild(r);
+      }
+      psvg.appendChild(pg);
+      mapDiv.appendChild(psvg);
+    }
+    if(!document.getElementById('map-overlay')){
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.id = 'map-overlay';
+      mapDiv.appendChild(svg);
+    }
   }
 
   // Redraw the SVG every time the map moves / zooms / resizes
@@ -4833,120 +4894,204 @@ function drawOverlay(){
            '</marker>';
   }
 
-  var parts = ['<defs>' +
-    arrowHead('arr-wind', WIND_COLOR) +
-    arrowHead('arr-sr',   SR_COLOR) +
-    arrowHead('arr-ss',   SS_COLOR) +
-    arrowHead('arr-sun',  SUN_COLOR) +
-  '</defs>'];
+  // Only the wind arrow uses an arrow-head marker now — the sun arc
+  // doesn't need one (the glowing current-sun disc and the rise/set
+  // glyph endpoints carry the meaning).
+  var parts = ['<defs>' + arrowHead('arr-wind', WIND_COLOR) + '</defs>'];
 
   var origin = latlngToPixel(CONFIG.lat, CONFIG.lng);
   var cx = origin.x, cy = origin.y;
 
-  // ── WIND arrow — a single streamline through Madise pointing in the
-  // direction the wind is blowing TOWARD ─────────────────────────────
+  // ── WIND arrow — REVERSED: head points at Madise from the direction
+  // the wind is coming FROM. Speed label sits at the upwind tail end.
+  // (Same convention as the sun arrows: showing "this is what's hitting
+  // you, from there".) Plus a faint drifting-particles layer below. ──
   if(IPAD.windDir !== null && IPAD.windSpeed !== null){
-    var blowDeg = (IPAD.windDir + 180) % 360;          // direction wind blows TO
-    var arrowLen = Math.min(Math.max(W, H) * 0.66, (90 + IPAD.windSpeed * 14) * 2);
-    var tail = anglePx((blowDeg + 180) % 360, arrowLen/2, cx, cy);
-    var tip  = anglePx(blowDeg, arrowLen/2, cx, cy);
+    var arrowLen = Math.min(Math.max(W, H) * 0.50, 110 + IPAD.windSpeed * 14);
+    var tail = anglePx(IPAD.windDir, arrowLen, cx, cy);  // upwind end
     var wx1 = tail.x.toFixed(1), wy1 = tail.y.toFixed(1),
-        wx2 = tip.x.toFixed(1),  wy2 = tip.y.toFixed(1);
+        wx2 = cx.toFixed(1),     wy2 = cy.toFixed(1);
     parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
                '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
     parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
                '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
 
-    // Speed label at the tip of the wind arrow
-    var centerTip = tip;
+    // Speed label at the upwind tail (where the arrow starts)
     var label = '<tspan font-weight="500">' + IPAD.windSpeed.toFixed(1) + '</tspan>';
     if(IPAD.windGust !== null && !isNaN(IPAD.windGust))
       label += '<tspan font-weight="700"> (' + IPAD.windGust.toFixed(1) + ')</tspan>';
     label += '<tspan font-weight="500"> m/s</tspan>';
-    parts.push('<text x="'+centerTip.x.toFixed(1)+'" y="'+centerTip.y.toFixed(1)+
+    parts.push('<text x="'+tail.x.toFixed(1)+'" y="'+tail.y.toFixed(1)+
                '" font-family="ui-monospace, SF Mono, monospace" font-size="12"' +
                ' fill="rgba(220,240,255,1)"' +
                ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                ' text-anchor="middle" dominant-baseline="central">' + label + '</text>');
   }
 
-  // ── SUN rise/set + current ─────────────────────────────────────────
-  var sunLen = Math.min(W, H) * 0.40;
+  // ── SUN — full-day arc across the sky ─────────────────────────────
+  // Trace where the sun has been + where it will go today, projected
+  // onto the map at a constant horizon-distance from Madise. Past
+  // portion (from sunrise to now) is a solid amber line; future
+  // (now to sunset) is a faded, dashed amber line. A glowing disc
+  // marks the current position; tagged sun-over-horizon glyphs sit
+  // at the rise + set endpoints with their times.
+  //
+  // Sampling: solarPosition() every 4 min during daytime → ~240 samples
+  // for a full Estonian summer day. That's smooth enough at viewport
+  // sizes we care about, and cheap to recompute on each map move.
+  var sunRingR = Math.min(W, H) * 0.40;
+  if(typeof solarPosition === 'function' &&
+     TODAY_SUNRISE_MS !== null && TODAY_SUNSET_MS !== null){
 
-  /* Sunrise icon: half-sun above a horizon line with an up arrow,
-   * Sunset icon: half-sun above a horizon line with a down arrow.
-   * Sized for inline use beside the time text. */
-  function sunGlyph(kind, color){
-    // viewBox 16×16, anchored so dominant-baseline:central centres it
-    var arrow = kind === 'rise'
-      ? '<path d="M11,9 L13,11 M11,9 L9,11 M11,9 L11,13" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
-      : '<path d="M11,13 L13,11 M11,13 L9,11 M11,13 L11,9" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>';
-    return '<svg x="-8" y="-8" width="16" height="16" viewBox="0 0 16 16" overflow="visible">' +
-             // half-sun disc
-             '<path d="M1,8 A5,5 0 0,1 11,8" fill="'+color+'" opacity="0.9"/>' +
-             // 3 small rays
-             '<line x1="6" y1="2" x2="6" y2="0.5" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
-             '<line x1="2.4" y1="4.4" x2="1.3" y2="3.3" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
-             '<line x1="9.6" y1="4.4" x2="10.7" y2="3.3" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
-             // horizon line
-             '<line x1="0" y1="9" x2="14" y2="9" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/>' +
-             arrow +
-           '</svg>';
-  }
-
-  function sunRay(az, color, markerRef, time, glyphKind){
-    var tip = anglePx(az, sunLen, cx, cy);
-    var x1 = cx.toFixed(1), y1 = cy.toFixed(1),
-        x2 = tip.x.toFixed(1), y2 = tip.y.toFixed(1);
-    // Halo + coloured line, solid (no dashes — cleaner read)
-    parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
-               '" stroke="rgba(0,0,0,0.55)" stroke-width="3.2" stroke-linecap="round"/>');
-    parts.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+
-               '" stroke="'+color+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#'+markerRef+')"/>');
-    if(time){
-      // Place the label slightly past the arrow tip, then nudge icon and
-      // text apart so the glyph sits to the left of the time string.
-      var lbl  = anglePx(az, sunLen + 30, cx, cy);
-      var glyphX = lbl.x - 18;
-      // Glyph (SVG composed of paths)
-      parts.push('<g transform="translate('+glyphX.toFixed(1)+','+lbl.y.toFixed(1)+')">' +
-                 sunGlyph(glyphKind, color) + '</g>');
-      // Time text
-      parts.push('<text x="'+lbl.x.toFixed(1)+'" y="'+lbl.y.toFixed(1)+
-                 '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
-                 ' fill="rgba(255,235,210,1)"' +
-                 ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
-                 ' text-anchor="start" dominant-baseline="central"> '+time+'</text>');
+    var samples = [];
+    var nowMs = Date.now();
+    for(var ts = TODAY_SUNRISE_MS; ts <= TODAY_SUNSET_MS; ts += 4 * 60 * 1000){
+      var sp = solarPosition(new Date(ts), CONFIG.lat, CONFIG.lng);
+      if(sp && typeof sp.azimuth === 'number' && sp.altitude > -1){
+        var pt = anglePx(sp.azimuth, sunRingR, cx, cy);
+        samples.push({ t: ts, x: pt.x, y: pt.y, az: sp.azimuth });
+      }
     }
-  }
-  var srTime = (document.getElementById('sunrise-time') || {}).textContent || '';
-  var ssTime = (document.getElementById('sunset-time')  || {}).textContent || '';
-  if(srTime === '—') srTime = '';
-  if(ssTime === '—') ssTime = '';
-  if(IPAD.srAz !== null) sunRay(IPAD.srAz, SR_COLOR, 'arr-sr', srTime, 'rise');
-  if(IPAD.ssAz !== null) sunRay(IPAD.ssAz, SS_COLOR, 'arr-ss', ssTime, 'set');
 
-  // Current sun position (daytime only). The earlier version linearly
-  // interpolated between sunrise and sunset azimuths, which sent the
-  // arrow over the WRONG horizon (through North for an NE-rising,
-  // NW-setting summer sun). solarPosition() returns the true current
-  // azimuth so the arrow always points where the sun actually is —
-  // east in the morning, south around noon, west in the evening.
-  if(IPAD.sunProgress !== null && typeof solarPosition === 'function'){
-    var sp = solarPosition(new Date(), CONFIG.lat, CONFIG.lng);
-    if(sp && typeof sp.azimuth === 'number' && sp.altitude > 0){
-      var sunAz = sp.azimuth;
-      var sTip = anglePx(sunAz, sunLen * 0.55, cx, cy);
-      var sx1 = cx.toFixed(1), sy1 = cy.toFixed(1),
-          sx2 = sTip.x.toFixed(1), sy2 = sTip.y.toFixed(1);
-      parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
-                 '" stroke="rgba(0,0,0,0.55)" stroke-width="3.2" stroke-linecap="round"/>');
-      parts.push('<line x1="'+sx1+'" y1="'+sy1+'" x2="'+sx2+'" y2="'+sy2+
-                 '" stroke="'+SUN_COLOR+'" stroke-width="1.8" stroke-linecap="round" marker-end="url(#arr-sun)"/>');
+    // Force-include endpoints exactly at the rise/set timestamps
+    if(samples.length){
+      var srSp = solarPosition(new Date(TODAY_SUNRISE_MS), CONFIG.lat, CONFIG.lng);
+      var ssSp = solarPosition(new Date(TODAY_SUNSET_MS),  CONFIG.lat, CONFIG.lng);
+      var srPt = anglePx(srSp.azimuth, sunRingR, cx, cy);
+      var ssPt = anglePx(ssSp.azimuth, sunRingR, cx, cy);
+      samples.unshift({ t: TODAY_SUNRISE_MS, x: srPt.x, y: srPt.y, az: srSp.azimuth });
+      samples.push(   { t: TODAY_SUNSET_MS,  x: ssPt.x, y: ssPt.y, az: ssSp.azimuth });
+    }
+
+    // Build past + future path strings. We straddle "now" by stitching
+    // an interpolated current point onto the end of past and start of
+    // future, so the dot-dash transition lands exactly on the dot.
+    var pastD = '', futD = '';
+    var curIdx = -1;
+    for(var i = 0; i < samples.length; i++){
+      if(samples[i].t <= nowMs) curIdx = i; else break;
+    }
+    var nowPt = null;
+    if(curIdx >= 0 && curIdx < samples.length - 1){
+      // Linear interp between curIdx and curIdx+1 to pin "now"
+      var a = samples[curIdx], b = samples[curIdx + 1];
+      var k = (nowMs - a.t) / (b.t - a.t);
+      nowPt = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+    } else if(typeof solarPosition === 'function' && nowMs >= TODAY_SUNRISE_MS && nowMs <= TODAY_SUNSET_MS){
+      var sp2 = solarPosition(new Date(), CONFIG.lat, CONFIG.lng);
+      if(sp2 && sp2.altitude > 0){
+        var p2 = anglePx(sp2.azimuth, sunRingR, cx, cy);
+        nowPt = { x: p2.x, y: p2.y };
+      }
+    }
+
+    function ptStr(p, first){ return (first ? 'M ' : 'L ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1); }
+    // Past arc — samples[0..curIdx] plus an interpolated "now" point
+    if(curIdx >= 0){
+      for(var i = 0; i <= curIdx; i++) pastD += ptStr(samples[i], i === 0) + ' ';
+      if(nowPt) pastD += ptStr(nowPt, false) + ' ';
+    }
+    // Future arc — starts at nowPt (or curIdx+1 if before sunrise) and
+    // continues to the last sample. Always begins with M so it draws as
+    // a separate stroke from the past path (different colour/dash).
+    var futStartIdx = curIdx + 1;
+    if(futStartIdx < samples.length){
+      var startedFut = false;
+      if(nowPt){
+        futD += ptStr(nowPt, true) + ' ';
+        startedFut = true;
+      }
+      for(var j = futStartIdx; j < samples.length; j++){
+        futD += ptStr(samples[j], !startedFut) + ' ';
+        startedFut = true;
+      }
+    }
+
+    // Halo behind both paths for legibility against satellite tiles
+    if(pastD) parts.push('<path d="'+pastD+'" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>');
+    if(futD)  parts.push('<path d="'+futD+ '" fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 4"/>');
+
+    // Past (already-travelled arc) — solid warm amber
+    if(pastD) parts.push('<path d="'+pastD+'" fill="none" stroke="'+SR_COLOR+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>');
+    // Future (remaining arc) — faded amber, dashed
+    if(futD)  parts.push('<path d="'+futD+ '" fill="none" stroke="rgba(233,167,107,0.45)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 4"/>');
+
+    // Helper: half-sun-over-horizon glyph (same as before)
+    function sunGlyph(kind, color){
+      var arrow = kind === 'rise'
+        ? '<path d="M11,9 L13,11 M11,9 L9,11 M11,9 L11,13" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
+        : '<path d="M11,13 L13,11 M11,13 L9,11 M11,13 L11,9" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>';
+      return '<svg x="-8" y="-8" width="16" height="16" viewBox="0 0 16 16" overflow="visible">' +
+        '<path d="M1,8 A5,5 0 0,1 11,8" fill="'+color+'" opacity="0.9"/>' +
+        '<line x1="6" y1="2" x2="6" y2="0.5" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
+        '<line x1="2.4" y1="4.4" x2="1.3" y2="3.3" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
+        '<line x1="9.6" y1="4.4" x2="10.7" y2="3.3" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round"/>' +
+        '<line x1="0" y1="9" x2="14" y2="9" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/>' +
+        arrow + '</svg>';
+    }
+
+    // Endpoint markers — glyph + time label, placed just OUTSIDE the
+    // arc (radial direction away from Madise) so they don't sit on
+    // the path itself.
+    var srTime = (document.getElementById('sunrise-time') || {}).textContent || '';
+    var ssTime = (document.getElementById('sunset-time')  || {}).textContent || '';
+    if(srTime === '—') srTime = '';
+    if(ssTime === '—') ssTime = '';
+    function arcEndpoint(p, az, time, kind, color){
+      // Outset the label radially from Madise by a few px
+      var outset = anglePx(az, sunRingR + 22, cx, cy);
+      parts.push('<g transform="translate('+(outset.x - 22).toFixed(1)+','+outset.y.toFixed(1)+')">' + sunGlyph(kind, color) + '</g>');
+      if(time){
+        parts.push('<text x="'+(outset.x - 8).toFixed(1)+'" y="'+outset.y.toFixed(1)+
+                   '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                   ' fill="rgba(255,235,210,1)"' +
+                   ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                   ' text-anchor="start" dominant-baseline="central"> '+time+'</text>');
+      }
+    }
+    if(samples.length){
+      arcEndpoint(samples[0],           samples[0].az,           srTime, 'rise', SR_COLOR);
+      arcEndpoint(samples[samples.length-1], samples[samples.length-1].az, ssTime, 'set',  SS_COLOR);
+    }
+
+    // Current sun position — glowing disc on the arc
+    if(nowPt){
+      parts.push('<circle cx="'+nowPt.x.toFixed(1)+'" cy="'+nowPt.y.toFixed(1)+
+                 '" r="14" fill="rgba(255,222,98,0.18)"/>');
+      parts.push('<circle cx="'+nowPt.x.toFixed(1)+'" cy="'+nowPt.y.toFixed(1)+
+                 '" r="7"  fill="rgba(0,0,0,0.55)"/>');
+      parts.push('<circle cx="'+nowPt.x.toFixed(1)+'" cy="'+nowPt.y.toFixed(1)+
+                 '" r="5.5" fill="'+SUN_COLOR+'"/>');
     }
   }
 
   svg.innerHTML = parts.join('');
+
+  // Wind-particle layer: rotate the persistent group to match the
+  // current downwind direction and re-translate to Madise's pixel
+  // position. Animation speed (--wind-dur) scales with wind speed.
+  updateWindParticles(cx, cy);
+}
+
+function updateWindParticles(cx, cy){
+  var psvg = document.getElementById('wind-particle-overlay');
+  var pg   = document.getElementById('wind-particle-group');
+  if(!psvg || !pg) return;
+  // Hide particles when there's no wind data or the air is essentially calm
+  if(IPAD.windDir === null || IPAD.windSpeed === null || IPAD.windSpeed < 0.4){
+    psvg.style.display = 'none';
+    return;
+  }
+  psvg.style.display = '';
+  var blowDeg = (IPAD.windDir + 180) % 360;     // direction wind blows TO
+  pg.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') rotate(' + blowDeg.toFixed(1) + ')');
+  // Faster wind → shorter animation duration (particles drift quicker)
+  var dur = Math.max(2.4, 14 / (1 + IPAD.windSpeed / 2.5));
+  pg.style.setProperty('--wind-dur', dur.toFixed(2) + 's');
+  // Push the CSS var down to children too (animation-duration uses it)
+  for(var c = 0; c < pg.children.length; c++){
+    pg.children[c].style.animationDuration = dur.toFixed(2) + 's';
+  }
 }
 
 function updateWindOverlay(dir, speed, gust){
