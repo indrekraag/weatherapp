@@ -3005,10 +3005,21 @@ function renderDaily(daily){
       var rainStr = isDry ? '—' : rain.toFixed(1);
       rainHtml = '<span class="day-rain' + (isDry ? '' : ' wet') + '">' + rainStr + '</span>';
     }
-    // Wind row — small, muted, sits directly under the rain row
+    // Wind row — colour-coded using the same windBarColor() ramp the
+    // 24h Tuul sparkline uses, so a glance at the 7-day strip reveals
+    // upcoming windy days (yellow → orange → red) without having to
+    // scrub the spark bars. Alpha clamped to 1 because the ramp is
+    // calibrated for bar backgrounds (partial-alpha) and reads as
+    // washed-out when applied to small foreground text.
     var windHtml = '';
     if(wind !== null && !isNaN(wind)){
-      windHtml = '<span class="day-wind">' + wind + ' m/s</span>';
+      var windColor = (typeof windBarColor === 'function')
+        ? windBarColor(wind).replace(/[\d.]+\)$/, '1)')
+        : '';
+      var styleAttr = windColor
+        ? ' style="color:' + windColor + ';font-weight:600"'
+        : '';
+      windHtml = '<span class="day-wind"' + styleAttr + '>' + wind + ' m/s</span>';
     }
     var el = document.createElement('div');
     el.className = 'day' + (isToday ? ' today' : '');
