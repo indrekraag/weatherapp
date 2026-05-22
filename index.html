@@ -1972,21 +1972,24 @@ body {
   .radar-timeline { margin-top: 8px; flex-shrink: 0; }
   .radar-status   { margin-top: 4px; flex-shrink: 0; }
 
-  /* Precipitation colour legend — small glass chip in the map's
-   * top-right corner. Static, pointer-events:none. */
+  /* Precipitation colour legend — mirrors the Leaflet zoom-control
+   * (the +/- block) on the opposite top corner. Same top offset, same
+   * background / border / radius / blur so the two read as a matched
+   * pair across the map edges. */
   .precip-legend {
     position: absolute;
     top: 10px; right: 10px;
     z-index: 500;
-    padding: 6px 9px 7px;
-    background: rgba(10,12,16,0.78);
+    padding: 5px 8px 6px;
+    background: rgba(10,10,14,0.82);
     border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 10px;
+    border-radius: 4px;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     pointer-events: none;
     font-family: -apple-system, "SF Pro Display", sans-serif;
     color: rgba(255,255,255,0.82);
+    box-shadow: 0 1px 5px rgba(0,0,0,0.65);
   }
   .precip-legend-title {
     font-size: 9px;
@@ -1994,14 +1997,14 @@ body {
     letter-spacing: 1.2px;
     text-transform: uppercase;
     color: rgba(255,255,255,0.92);
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
   .precip-legend-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     font-size: 10px;
-    line-height: 1.35;
+    line-height: 1.3;
   }
   .precip-sw {
     width: 9px; height: 9px;
@@ -4591,6 +4594,15 @@ function radarApplyData(data){
   // satellite frames update on the same 5-min cadence as radar.
   if(typeof ipadApplyClouds === 'function' && typeof IPAD !== 'undefined' && IPAD.cloudsOn){
     ipadApplyClouds();
+  }
+  // Hide the PILV (cloud-tops) button when RainViewer's public API
+  // isn't currently serving any satellite IR frames — their endpoint
+  // returns an empty array intermittently so the button would do
+  // nothing. It re-appears when frames repopulate.
+  var pilvBtn = document.getElementById('ipad-clouds');
+  if(pilvBtn){
+    var hasSat = data.satellite && data.satellite.infrared && data.satellite.infrared.length;
+    pilvBtn.style.display = hasSat ? '' : 'none';
   }
 
   // Auto-play once frames are loaded — radar is meant to be
