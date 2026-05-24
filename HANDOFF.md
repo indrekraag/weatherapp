@@ -1,6 +1,6 @@
 # Madise iPad weather kiosk — session handoff
 
-Last updated: 2026-05-22
+Last updated: 2026-05-24
 
 ## What this project is
 
@@ -12,7 +12,8 @@ but rearranges the layout around a big always-on radar map.
 - **Live URL**: https://indrekraag.github.io/weatherapp/
 - **Repo**: https://github.com/indrekraag/weatherapp (branch: `main`)
 - **Sibling phone repo**: https://github.com/indrekraag/weatherapp2 — used
-  as the stylistic reference and as the upstream for the EMHI bridge
+  as the stylistic reference and as the upstream for the EMHI station
+  bridge
 - **Local path**: `/Users/indrekraag/wa1/`
 
 ## Current layout (iPad landscape)
@@ -22,61 +23,109 @@ but rearranges the layout around a big always-on radar map.
 │                  │ 7-day forecast strip (full right col)    │
 │ HERO CARD        ├──────────────────────────────────────────┤
 │ - big temp       │                                           │
-│ - 3 comfort      │                                           │
-│   pills          │  VIHMARADAR (RainViewer + Esri sat tiles)│
-│ - 6 metric tiles │  - 1 wind streamline through Madise      │
-│ - 3 station      │  - sunrise/sunset/current-sun rays       │
-│   chips          │    with SVG sun-over-horizon glyphs      │
-│                  │  - zoom presets 50 m / 2 km / 10 km /    │
-│                  │    80 km (default) / EE                  │
-│ FORECAST CARD    │  - MAP / SAT base toggle                  │
-│ - Temperatuur    │  - timeline + play (auto-plays on load)  │
-│   sparkline      │                                           │
+│ - 3 comfort      │  VIHMARADAR (RainViewer + Esri sat tiles)│
+│   pills          │  + sun ARC across the sky                │
+│ - 6 metric tiles │  + moon ARC (when above horizon)         │
+│ - 3 station      │  + 1 wind arrow at Madise + label        │
+│   chips          │  + faint drifting wind particles         │
+│                  │  + Sadu colour legend top-right          │
+│ FORECAST CARD    │  + zoom presets / MAP·SAT / [PILV opt'l] │
+│ - Temperatuur    │  + timeline (auto-plays, time on right)  │
 │ - Sadu (mm/h)    │                                           │
 │ - Tuul + dirs +  │                                           │
 │   Puhangud       │                                           │
 └──────────────────┴──────────────────────────────────────────┘
-                  (column bottoms aligned via JS at runtime)
+                  (column bottoms aligned at runtime via JS)
 ```
 
-- Phone build is unchanged — all iPad CSS is inside
+- Phone build untouched — all iPad CSS is inside
   `@media (min-width: 900px) and (orientation: landscape)`.
 
-## What's already done
+## What's done
 
-Day-by-day in the commit history (`git log --oneline`); summary:
+### Layout
+- Glass cards, warm-amber accent (`#e9a76b`), SF system font, weather-blob
+  body background — all ported from `weatherapp2`
+- 3-row landscape grid: warning row (currently disabled) ・ hero + 7-day
+  ・ forecast continues + radar
+- Left wrapper (`.ipad-left-col`) so hero + forecast share one grid cell
+  with `overflow-y: auto`; `display: contents` on phone so the wrapper
+  vanishes there
+- `syncRadarToForecast()` JS aligns the radar's bottom with the forecast
+  card's bottom on init + resize so both columns end at the same line
+- iOS `100dvh` + `-webkit-fill-available` so the radar's bottom controls
+  don't disappear behind Safari's URL bar
+- Tundub kui forecast row hidden via `.forecast-row-feels` class hook
+  (`:nth-of-type` was a footgun — counts divs not just `.forecast-row`)
 
-- Full visual port from `weatherapp2`: glass cards, single warm-amber
-  accent (#e9a76b), SF-system font, weather-driven blob field on body
-- iPad-specific landscape grid (left sidebar full height, 7-day on top
-  of map, radar below); column-bottom alignment via
-  `syncRadarToForecast()`
-- Map enhancements: wind streamline + sunrise/sunset/current-sun SVG
-  overlay; zoom presets; satellite/light base toggle; auto-play on load
-  with `RADAR.userPaused` flag so the 5-min refresh doesn't restart the
-  loop after a manual pause
-- Forecast card lives in the sidebar with rows thinned to 14 px bars,
-  legends hidden, "Tundub kui" row hidden; Sadu defaults to **mm/h**
-  (`hulk`), not probability
-- `maxNativeZoom: 7` on the RainViewer tile layer (no more "Zoom Level
-  Not Supported" placeholder tiles past country level)
-- iOS `100vh` clipping fix: `min-height: 100dvh` + `-webkit-fill-available`
-  fallback so the radar's bottom controls don't hide behind the URL bar
-- Tundub kui forecast row hidden via explicit `.forecast-row-feels`
-  class hook (the original `:nth-of-type(2)` selector was wrong — it
-  counts divs, not just `.forecast-row` divs)
-- Empty warning bar collapses (`.warning-bar-empty` class + iPad
-  CSS hides it) so the row doesn't eat vertical room when calm
-- Visibility-change listener re-pulls all station feeds when the iPad
-  wakes from sleep (`setInterval` pauses on hidden tabs)
-- Kurevere fetch errors now show **inside the chip's sub-line**
-  ("HTTP 5xx" / "võrgu viga" / "aegus" / "parse error") for visible
-  debugging on the iPad without the dev console
-- `server.py` — small Python dev server that proxies `/api/kurevere`
-  and `/api/emhi` server-side, used when testing on the LAN over HTTP
-  (CORS quirks were intermittent there). On the live GitHub-Pages
-  origin the JS falls back to the direct tarktee URL (works identically
-  to the phone build).
+### Forecast card
+- 14 px bar height, axis labels, wind-direction arrows under Tuul, gusts
+  sub-row, colour-ramp legends hidden to save vertical room
+- Sadu defaults to **mm/h** (`hulk`), not probability — when staring at
+  a radar the relevant question is amount
+
+### Radar map
+- `maxNativeZoom: 7` on RainViewer tiles so no more "Zoom Level Not
+  Supported" placeholders at country level
+- Default zoom 80 km (level 8); presets 50 m / 2 km / 10 km / 80 km / EE
+- MAP / SAT base toggle (Esri World Imagery as the sat layer)
+- Auto-plays on load; manual pause sets `RADAR.userPaused` so the 5-min
+  refresh doesn't restart the loop
+- Timeline: play btn ・ slider stretching middle ・ time pinned to right
+
+### Map overlays (SVG layer)
+- **Sun arc** across the sky for today, sampled every 4 min from
+  `solarPosition()`; past portion (rise → now) solid amber, future
+  (now → set) dashed amber. Sun-over-horizon glyphs + time labels at
+  both endpoints. Glowing sun disc + altitude° label at the current
+  position
+- **Moon arc** — same treatment, cool blue, only drawn when the moon
+  is above the horizon at some point in a ±12 h window
+- **Wind arrow** — single line with head pointing AT Madise from the
+  direction wind is FROM (meteorology convention). Speed/gust label
+  at the upwind tail end
+- **Wind particles** — persistent `#wind-particle-overlay` SVG with 14
+  faint cyan dashes drifting downwind via CSS keyframes; group rotation
+  + animation-duration set per redraw. Hidden when wind < 0.4 m/s
+- **Precipitation colour legend** inside `#radar-map`, top-right corner,
+  same Leaflet-zoom styling as the +/- block on the opposite corner
+
+### Data
+- Open-Meteo for weather / hourly / daily / pollen / aurora air quality
+- NOAA SWPC for Kp / Ovation / Bz
+- Tarktee ArcGIS REST for Kurevere — now via the GH Actions bridge
+  (see below); direct URL still used as a last-resort fallback
+- EMHI bundle at `raw.githubusercontent.com/indrekraag/weatherapp2/data/
+  emhi.json` (Lääne-Nigula 26124 + Haapsalu 26123 + CAP warnings)
+- Local astronomy: Meeus simplified for sun, Brown lunar leading-term
+  for moon
+
+### Kurevere bridge
+- `scripts/fetch_kurevere.py` + `.github/workflows/kurevere.yml` cron
+  pulls tarktee server-side every 15 min and writes
+  `https://raw.githubusercontent.com/indrekraag/weatherapp/data/
+  kurevere.json`
+- `fetchKurevere()` reads that URL on the github.io build (this device's
+  iPad refuses tarktee directly — likely content blocker / TLS profile;
+  Mac + iPhone Safari reach tarktee fine)
+- Local `server.py` proxies `/api/kurevere` for LAN HTTP dev testing
+- 7-day strip: daily max-wind values colour-coded with `windBarColor()`
+  so windy upcoming days stand out
+
+### Kiosk-friendly behaviour
+- `visibilitychange` listener re-pulls Kurevere / EMHI / warnings /
+  weather / Kp the moment the iPad wakes from sleep — `setInterval`
+  pauses on hidden tabs
+- Hard-refresh ⟲ in hero-bar clears localStorage + service-worker caches
+
+## What's currently disabled / pending
+
+| | Status | Notes |
+|---|---|---|
+| Warning bar (`#warning-bar`) | **disabled on iPad** | CSS comment block in `index.html` next to the `display: none` override has the original styling for easy restore. `renderWarnings()` still runs. Disabled because the row pushed the left column past its vertical budget; needs a layout pass. |
+| PILV cloud overlay (RainViewer IR) | **removed** | RainViewer's `satellite.infrared` array comes back empty too often |
+| PILV cloud overlay (OpenWeatherMap) | **gated** | Button hidden until `window.OWM_KEY` is set in the `<script>` near the top of `<body>`. Get a free key from https://openweathermap.org/api and paste it. |
+| Lightning strikes | **not started** | Free CORS-friendly source TBD — Blitzortung WS needs proxying, NASA GIBS has no Europe IR, OWM requires a paid plan for strikes |
 
 ## How to run locally
 
@@ -86,43 +135,55 @@ python3 server.py 8765          # custom server with /api/* proxies
 # open http://<mac-LAN-ip>:8765/index.html on the iPad
 ```
 
-Static-only equivalent (`python3 -m http.server 8765`) also works but
-without the Kurevere/EMHI proxy fallbacks.
+`python3 -m http.server 8765` works too, but you'll lose the
+`/api/kurevere` and `/api/emhi` proxies.
+
+## Files
+
+- `index.html` — single-file app (~5000 lines)
+- `server.py` — dev-only Python proxy server
+- `scripts/fetch_kurevere.py` — GH Actions cron worker
+- `.github/workflows/kurevere.yml` — 15-min cron + push trigger
+- `index_vana.html`, `indexv2..v5.html` — pre-unify iterations
+  (archived, not loaded by the live page)
+- `HANDOFF.md` — this file
+- `README.md` — GitHub Pages publish instructions
 
 ## Open items / next steps
 
-1. **Verify Kurevere on the live URL.** The latest push to `main` ought
-   to fix it on `indrekraag.github.io/weatherapp/` since tarktee
-   honours CORS for the `*.github.io` origin. If it still shows "—"
-   after a hard refresh (⟲ icon in the hero bar) check Safari's Web
-   Inspector for the actual fetch error.
-2. The PWA manifest still says "Madise Ilmaradar" (inherited from
-   weatherapp2). Fine for browser use; rename if this gets installed
-   to home screen.
-3. No service worker registered yet — purely online. Lift `sw.js` from
-   weatherapp2 if offline-tolerance matters for the kiosk.
-4. The `wip/ipad-unify` branch now matches `main`; can be deleted once
-   you're confident nothing needs to be cherry-picked back.
-
-## Files in the repo
-
-- `index.html` — single-file app (~4700 lines: phone base + iPad
-  layout + iPad-specific JS for map overlay, zoom presets, sync)
-- `server.py` — dev-only proxy server
-- `index_vana.html`, `indexv2..v5.html` — pre-unify iterations,
-  kept for archival, not loaded by the live page
-- `HANDOFF.md` — this file
-- `README.md` — original GitHub Pages publish instructions
+1. **Warning bar layout fix.** Re-add `#warning-bar` to the iPad grid
+   without breaking column alignment. Options to try: skinnier idle
+   state (height: 22 px max), or push it OUTSIDE `.app` into a fixed
+   strip above the grid, or just always reserve the row but with
+   `min-height: 0`.
+2. **PILV / OpenWeatherMap key.** Get the free key, paste into the
+   config `<script>` near the top of `<body>`. Button auto-appears.
+3. **Lightning strikes.** Pick a data source (Blitzortung community
+   feed via small proxy in `server.py` is probably easiest, but
+   requires CORS pass-through and the GH Pages build doesn't have a
+   server). Alternative: use the same GH Actions cron pattern as
+   Kurevere to pull strikes server-side every minute.
+4. **Wind particles visibility.** Currently faint enough to be invisible
+   in still air or against light tiles. If the user wants them more
+   prominent, bump opacity (~0.85) and stroke / width — or drop them.
+5. **PWA manifest** still says "Madise Ilmaradar" (inherited from
+   weatherapp2). Rename if this version gets installed to home screen.
+6. **Service worker** — none registered. Lift `sw.js` from weatherapp2
+   if offline-tolerance matters.
 
 ## Useful command snippets
 
 ```bash
-# headless screenshot at iPad viewport
+# Headless screenshot at iPad viewport
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless=new --disable-gpu --hide-scrollbars \
   --window-size=1024,768 --virtual-time-budget=15000 \
   --screenshot=/tmp/ipad.png http://127.0.0.1:8765/index.html
 
-# verify Kurevere endpoint manually
-curl -s "https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/MapServer/0/query?where=site_name='Kurevere'&outFields=*&f=json" | head -c 200
+# Trigger the Kurevere GH Actions workflow manually
+gh workflow run kurevere.yml -R indrekraag/weatherapp
+
+# Check what the Kurevere bridge has cached right now
+curl -s https://raw.githubusercontent.com/indrekraag/weatherapp/data/kurevere.json \
+  | python3 -m json.tool
 ```
