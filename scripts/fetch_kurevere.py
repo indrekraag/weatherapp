@@ -15,8 +15,11 @@ Why this script exists:
 Usage:
     python3 scripts/fetch_kurevere.py --out /tmp/kurevere.json
 
-Exits non-zero on network or parse failure so the workflow can fail
-loudly instead of silently committing stale data.
+Network/connection hiccups are retried (3 attempts with backoff). If
+every attempt fails, the script exits 0 *without* writing the output
+file and sets the GitHub Actions step output ``wrote=false``, so the
+workflow skips the push and the data branch keeps its last good
+snapshot — a transient outage no longer emails a cron-failure alert.
 """
 
 from __future__ import annotations
@@ -24,8 +27,9 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
-import urllib.error
+import time
 import urllib.request
 from pathlib import Path
 
@@ -34,6 +38,12 @@ TARKTEE_URL = (
     "MapServer/0/query?where=site_name=%27Kurevere%27&outFields=*&f=json"
 )
 TIMEOUT_SECONDS = 15
+
+# Retry policy. tarktee is occasionally slow/unreachable from GitHub's
+# runners; retrying a few times with a short backoff clears most transient
+# failures. Backoff applies *between* attempts, so 3 attempts sleep twice.
+FETCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = (5, 15)
 
 # Only surface the fields the PWA actually reads — keeps the bundle small
 # and stops random schema noise from triggering pointless commits.
@@ -74,11 +84,47 @@ def build_snapshot(raw: dict) -> dict:
     return {
         "source": "tarktee.mnt.ee",
         "source_url": TARKTEE_URL,
-        "fetched_at": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "fetched_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         # Wrap as a single-feature collection so renderKurevere() in
         # index.html can read it with the same shape as the direct API.
         "features": [{"attributes": attrs}],
     }
+
+
+def set_action_output(name: str, value: str) -> None:
+    """Expose a step output when running under GitHub Actions (no-op
+    locally). The workflow gates its push step on ``wrote == 'true'`` so a
+    soft failure leaves the data branch untouched."""
+    out = os.environ.get("GITHUB_OUTPUT")
+    if not out:
+        return
+    with open(out, "a", encoding="utf-8") as fh:
+        fh.write(f"{name}={value}\n")
+
+
+def fetch_snapshot_with_retries(attempts: int = FETCH_ATTEMPTS):
+    """Fetch tarktee + build the snapshot, retrying transient failures.
+
+    A single attempt must clear every hazard: the HTTP fetch (timeouts,
+    5xx), the JSON parse, and the "has a Kurevere feature" check (an empty
+    feature list is treated as a miss and retried). Returns the snapshot
+    dict, or None if every attempt failed."""
+    last_err = None
+    for i in range(1, attempts + 1):
+        try:
+            return build_snapshot(fetch())
+        except Exception as exc:  # noqa: BLE001 — catch-all is intentional for retry
+            last_err = exc
+            print(f"Kurevere fetch attempt {i}/{attempts} failed: {exc}", file=sys.stderr)
+            if i < attempts:
+                delay = RETRY_BACKOFF_SECONDS[min(i - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
+                print(f"  retrying in {delay}s…", file=sys.stderr)
+                time.sleep(delay)
+    print(
+        f"Kurevere fetch failed after {attempts} attempts; last error: {last_err}",
+        file=sys.stderr,
+    )
+    return None
 
 
 def main() -> int:
@@ -86,21 +132,24 @@ def main() -> int:
     p.add_argument("--out", default="data/kurevere.json", help="Output JSON path")
     args = p.parse_args()
 
-    try:
-        raw = fetch()
-    except urllib.error.URLError as e:
-        print(f"ERROR fetching tarktee: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:  # broad — workflow will surface the message
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 1
+    snapshot = fetch_snapshot_with_retries()
+    if snapshot is None:
+        # Soft failure: every attempt hit a transient error. Write nothing
+        # and tell the workflow not to push, so the data branch keeps its
+        # last good snapshot. Exit 0 so the cron doesn't email on a blip.
+        print(
+            "Soft failure: tarktee unreachable after retries — keeping the "
+            "previous snapshot (no file written, no push)."
+        )
+        set_action_output("wrote", "false")
+        return 0
 
-    snapshot = build_snapshot(raw)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False))
     print(f"✓ Kurevere snapshot → {out_path}")
     print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+    set_action_output("wrote", "true")
     return 0
 
 

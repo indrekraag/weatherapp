@@ -109,6 +109,14 @@ but rearranges the layout around a big always-on radar map.
   iPad refuses tarktee directly — likely content blocker / TLS profile;
   Mac + iPhone Safari reach tarktee fine)
 - Local `server.py` proxies `/api/kurevere` for LAN HTTP dev testing
+- **Hardened 2026-06-08:** the cron retries tarktee **3× with backoff
+  (5 s, 15 s)** and **soft-fails** (exit 0, no file, push step skipped) if
+  every attempt fails — so a transient tarktee outage leaves the last good
+  `kurevere.json` in place instead of emailing a workflow-failure alert.
+  `fetch_kurevere.py` signals the Actions output `wrote=true|false`; the
+  push step is gated on `wrote == 'true'`. Actions bumped to
+  `checkout@v5` / `setup-python@v6` (Node 24); also fixed the deprecated
+  `datetime.utcnow()`.
 - 7-day strip: daily max-wind values colour-coded with `windBarColor()`
   so windy upcoming days stand out
 
