@@ -1775,9 +1775,17 @@ body {
   font-size: 9px; color: rgba(255,255,255,0.45); white-space: nowrap;
 }
 .price-bars { position: absolute; left: 30px; right: 0; top: 0; bottom: 0; display: flex; align-items: flex-end; gap: 3px; }
-.price-bars > span { flex: 1 1 0; min-width: 0; border-radius: 2px 2px 0 0; }
+.price-bars > span { position: relative; flex: 1 1 0; min-width: 0; border-radius: 2px 2px 0 0; }
 .price-bars > span.past { opacity: 0.45; }
 .price-bars > span.now { outline: 1.5px solid rgba(255,255,255,0.9); outline-offset: -1px; }
+/* Value tag above the highest / lowest bar for quick reading */
+.price-bars > span .bar-val {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  margin-bottom: 1px;
+  font-size: 9px; font-weight: 700; line-height: 1;
+  color: rgba(255,255,255,0.95); white-space: nowrap; pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+}
 .price-axis { display: flex; gap: 3px; margin-left: 30px; margin-top: 4px; }
 .price-axis > span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 9px; color: rgba(255,255,255,0.45); }
 .price-axis > span.now { color: rgba(255,255,255,0.92); font-weight: 700; }
@@ -3885,9 +3893,17 @@ function renderNps(data){
       items.push({ date: d, snt: priceSnt(eur), isNow: d.getTime() === nowHourMs, isPast: d.getTime() < nowHourMs });
     }
     if(items.length < 2) return;
-    var maxV = Math.max.apply(null, items.map(function(x){ return x.snt; }));
+    // Indices of the highest / lowest visible bars (for value tags).
+    var maxIdx = 0, minIdx = 0;
+    items.forEach(function(x, i){
+      if(x.snt > items[maxIdx].snt) maxIdx = i;
+      if(x.snt < items[minIdx].snt) minIdx = i;
+    });
+    var maxV = items[maxIdx].snt;
     var step = maxV <= 10 ? 2 : maxV <= 20 ? 5 : maxV <= 60 ? 10 : 20;
     var top = Math.max(step * 2, Math.ceil(maxV / step) * step);
+    // Guarantee headroom above the tallest bar so its value tag isn't clipped.
+    if(maxV > 0.82 * top) top += step;
 
     if(gridEl){
       gridEl.innerHTML = '';
@@ -3920,6 +3936,20 @@ function renderNps(data){
         axisEl.appendChild(s);
       }
     });
+
+    // Value tags above the highest bar and the current-hour bar
+    var nowIdx = -1;
+    for(var ni = 0; ni < items.length; ni++){ if(items[ni].isNow){ nowIdx = ni; break; } }
+    function tagBar(idx, val, cls){
+      var bar = barsEl.children[idx];
+      if(!bar) return;
+      var t = document.createElement('span');
+      t.className = 'bar-val' + (cls ? ' ' + cls : '');
+      t.textContent = val.toFixed(1);
+      bar.appendChild(t);
+    }
+    tagBar(maxIdx, items[maxIdx].snt, 'max');
+    if(nowIdx >= 0 && nowIdx !== maxIdx) tagBar(nowIdx, items[nowIdx].snt, 'now');
 
     var nowItem = items.filter(function(x){ return x.isNow; })[0];
     var nowEl = byId('price-now');

@@ -81,9 +81,13 @@ Added an **"Elektri hind"** card in the right column **under the radar**.
 - Same gridded chart as wa2: Y-axis + gridlines, color tiers
   (green→orange@10→red@18→purple@50, s/kWh incl 24% VAT), rolling 3h-past
   (dimmed) → onwards, hour label under each bar, "Hetkel:" current price.
-- Rollback: pre-price-card index saved locally as
-  `index_backup_pre_price_ipad_20260622.html` (gitignored); or
-  `git checkout d9bf060 -- index.html`.
+- **Value tags:** the highest bar and the current-hour bar show their
+  price as a figure on top (`.bar-val`); the Y-scale adds headroom so the
+  peak tag isn't clipped.
+- Rollback snapshots (all gitignored, local-only):
+  `index_backup_pre_price_ipad_20260622.html` (no price card),
+  `index_backup_ipad_pre_valuetags_20260622.html` (price card, pre value
+  tags). Or `git checkout d9bf060 -- index.html` for the pre-price build.
 
 ## Current layout (iPad landscape)
 
