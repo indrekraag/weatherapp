@@ -27,7 +27,7 @@ import sys
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
 
 KUREVERE_URL = (
-    "https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/"
+    "https://tarktee.transpordiamet.ee/tarktee/rest/services/road_weather_stations/"
     "MapServer/0/query?where=site_name=%27Kurevere%27&outFields=*&f=json"
 )
 EMHI_URL = "https://raw.githubusercontent.com/indrekraag/weatherapp2/data/emhi.json"

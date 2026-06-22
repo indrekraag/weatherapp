@@ -33,8 +33,12 @@ import time
 import urllib.request
 from pathlib import Path
 
+# NOTE: tarktee migrated from mnt.ee → transpordiamet.ee around 2026-06-04.
+# The old host still 301-redirects, but the cron silently soft-failed for
+# weeks against it (GitHub runner couldn't complete the cross-domain hop),
+# so we hit the canonical new URL directly instead of relying on a redirect.
 TARKTEE_URL = (
-    "https://tarktee.mnt.ee/tarktee/rest/services/road_weather_stations/"
+    "https://tarktee.transpordiamet.ee/tarktee/rest/services/road_weather_stations/"
     "MapServer/0/query?where=site_name=%27Kurevere%27&outFields=*&f=json"
 )
 TIMEOUT_SECONDS = 15
@@ -82,7 +86,7 @@ def build_snapshot(raw: dict) -> dict:
     attrs_raw = features[0].get("attributes") or {}
     attrs = {k: attrs_raw.get(k) for k in FIELDS}
     return {
-        "source": "tarktee.mnt.ee",
+        "source": "tarktee.transpordiamet.ee",
         "source_url": TARKTEE_URL,
         "fetched_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         # Wrap as a single-feature collection so renderKurevere() in
