@@ -1963,8 +1963,11 @@ body {
     pointer-events: none;
     overflow: visible;
   }
-  #wind-particle-overlay { z-index: 399; }
-  #map-overlay           { z-index: 400; }
+  /* Leaflet's .leaflet-map-pane is itself z-index:400 (stacking context via
+   * its transform), so these overlays MUST sit above 400 or the tiles cover
+   * them. Particles below the sun/moon arcs; both above the map. */
+  #wind-particle-overlay { z-index: 410; }
+  #map-overlay           { z-index: 420; }
 
   /* Faint blue-cyan dashes drifting along the wind direction. The group
    * is rotated by JS to match the current downwind bearing; each particle
@@ -1972,10 +1975,10 @@ body {
    * delay so the stream feels continuous rather than synchronised.
    * Duration is set inline (--wind-dur CSS var) based on wind speed. */
   @keyframes wind-drift {
-    0%   { transform: translateX(-480px); opacity: 0; }
-    12%  { opacity: 0.55; }
-    88%  { opacity: 0.55; }
-    100% { transform: translateX(480px);  opacity: 0; }
+    0%   { transform: translateX(calc(-1 * var(--wind-travel, 480px))); opacity: 0; }
+    12%  { opacity: 0.85; }
+    88%  { opacity: 0.85; }
+    100% { transform: translateX(var(--wind-travel, 480px));  opacity: 0; }
   }
   .wind-particle {
     animation-name: wind-drift;
@@ -3110,7 +3113,9 @@ function renderDaily(daily){
     var wind = daily.wind_speed_10m_max ? Math.round(daily.wind_speed_10m_max[i] || 0) : null;
     var icon = weatherCodeToSVG(daily.weathercode[i], true);
     var isToday = (i === 0);
-    var name = isToday ? 'Täna' : ET_DAY_ABBR[d.getDay()] + ' ' + d.getDate();
+    var dd = ('0' + d.getDate()).slice(-2);
+    var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+    var name = isToday ? 'Täna' : dd + '/' + mm;
     var rainHtml = '';
     if(rain !== null){
       var isDry = rain < 0.1;
@@ -4794,14 +4799,14 @@ function initIpadEnhancements(){
       // visual noise that competes with the radar / sun arc.
       var pg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       pg.id = 'wind-particle-group';
-      for(var i = 0; i < 14; i++){
+      for(var i = 0; i < 24; i++){
         var r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         r.setAttribute('class', 'wind-particle');
-        r.setAttribute('width',  '16');
-        r.setAttribute('height', '1.4');
-        r.setAttribute('rx', '0.7');
-        r.setAttribute('fill', 'rgba(150,210,250,0.75)');
-        r.setAttribute('x', '-8');
+        r.setAttribute('width',  '22');
+        r.setAttribute('height', '1.8');
+        r.setAttribute('rx', '0.9');
+        r.setAttribute('fill', 'rgba(180,222,255,0.95)');
+        r.setAttribute('x', '-11');
         // Spread particles vertically (perpendicular to the rotated drift)
         // and offset their animation phase so they don't pulse in sync.
         var y = (Math.random() - 0.5) * 520;
@@ -5061,6 +5066,29 @@ function drawOverlay(){
   var origin = latlngToPixel(CONFIG.lat, CONFIG.lng);
   var cx = origin.x, cy = origin.y;
 
+  // Anti-overlap: each text value is nudged radially outward from Madise
+  // until it clears every label already placed this frame — so sun and
+  // moon values never sit on top of each other when their bearings (or
+  // rise/set azimuths) coincide. Placement order = priority: wind, sun, moon.
+  var placedLabels = [];
+  function placeText(x, y, approxW){
+    var ax = x, ay = y, approxH = 14;
+    var dx = ax - cx, dy = ay - cy, d = Math.hypot(dx, dy) || 1;
+    var ux = dx / d, uy = dy / d;
+    for(var it = 0; it < 24; it++){
+      var clash = false;
+      for(var i = 0; i < placedLabels.length; i++){
+        var p = placedLabels[i];
+        if(Math.abs(ax - p.x) < (approxW + p.w) / 2 + 2 &&
+           Math.abs(ay - p.y) < (approxH + p.h) / 2 + 2){ clash = true; break; }
+      }
+      if(!clash) break;
+      ax += ux * 7; ay += uy * 7;
+    }
+    placedLabels.push({ x: ax, y: ay, w: approxW, h: approxH });
+    return { x: ax, y: ay };
+  }
+
   // ── WIND arrow — REVERSED: head points at Madise from the direction
   // the wind is coming FROM. Speed label sits at the upwind tail end.
   // (Same convention as the sun arrows: showing "this is what's hitting
@@ -5077,10 +5105,15 @@ function drawOverlay(){
 
     // Speed label at the upwind tail (where the arrow starts)
     var label = '<tspan font-weight="500">' + IPAD.windSpeed.toFixed(1) + '</tspan>';
-    if(IPAD.windGust !== null && !isNaN(IPAD.windGust))
+    var wTxt = IPAD.windSpeed.toFixed(1);
+    if(IPAD.windGust !== null && !isNaN(IPAD.windGust)){
       label += '<tspan font-weight="700"> (' + IPAD.windGust.toFixed(1) + ')</tspan>';
+      wTxt += ' (' + IPAD.windGust.toFixed(1) + ')';
+    }
     label += '<tspan font-weight="500"> m/s</tspan>';
-    parts.push('<text x="'+tail.x.toFixed(1)+'" y="'+tail.y.toFixed(1)+
+    wTxt += ' m/s';
+    var wlp = placeText(tail.x, tail.y, wTxt.length * 7);
+    parts.push('<text x="'+wlp.x.toFixed(1)+'" y="'+wlp.y.toFixed(1)+
                '" font-family="ui-monospace, SF Mono, monospace" font-size="12"' +
                ' fill="rgba(220,240,255,1)"' +
                ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
@@ -5201,11 +5234,12 @@ function drawOverlay(){
       var outset = anglePx(az, sunRingR + 22, cx, cy);
       parts.push('<g transform="translate('+(outset.x - 22).toFixed(1)+','+outset.y.toFixed(1)+')">' + sunGlyph(kind, color) + '</g>');
       if(time){
-        parts.push('<text x="'+(outset.x - 8).toFixed(1)+'" y="'+outset.y.toFixed(1)+
+        var tp = placeText(outset.x, outset.y, time.length * 7);
+        parts.push('<text x="'+tp.x.toFixed(1)+'" y="'+tp.y.toFixed(1)+
                    '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
                    ' fill="rgba(255,235,210,1)"' +
                    ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
-                   ' text-anchor="start" dominant-baseline="central"> '+time+'</text>');
+                   ' text-anchor="middle" dominant-baseline="central">'+time+'</text>');
       }
     }
     if(samples.length){
@@ -5227,7 +5261,8 @@ function drawOverlay(){
       var spNow = solarPosition(new Date(), CONFIG.lat, CONFIG.lng);
       if(spNow && typeof spNow.altitude === 'number'){
         var altLbl = anglePx(spNow.azimuth, sunRingR + 22, cx, cy);
-        parts.push('<text x="'+altLbl.x.toFixed(1)+'" y="'+altLbl.y.toFixed(1)+
+        var sap = placeText(altLbl.x, altLbl.y, 28);
+        parts.push('<text x="'+sap.x.toFixed(1)+'" y="'+sap.y.toFixed(1)+
                    '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
                    ' fill="rgba(255,235,210,1)"' +
                    ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
@@ -5237,49 +5272,95 @@ function drawOverlay(){
     }
   }
 
-  // ── MOON arc — drawn only when the moon is above the horizon at
-  // some point today. Uses the same arc-trace approach as the sun, in
-  // a cool blue tint so it's visually distinct. We sample around the
-  // local 24-hour window so the moon's arc is captured even when it
-  // straddles midnight (rises evening, sets next morning). ──
-  var moonRingR = sunRingR * 0.94;          // slightly smaller than sun ring
-  if(typeof moonPosition === 'function'){
-    var MOON_COLOR     = 'rgba(180,210,255,0.95)';
-    var MOON_DIM_COLOR = 'rgba(180,210,255,0.40)';
-    var MOON_HALO      = 'rgba(0,0,0,0.55)';
-    var winStart = Date.now() - 12 * 3600 * 1000;
-    var winEnd   = Date.now() + 12 * 3600 * 1000;
-    var moonSamples = [];
-    for(var mt = winStart; mt <= winEnd; mt += 6 * 60 * 1000){
-      var mp = moonPosition(new Date(mt), CONFIG.lat, CONFIG.lng);
-      if(mp && typeof mp.azimuth === 'number' && mp.altitude > 0){
-        var mPt = anglePx(mp.azimuth, moonRingR, cx, cy);
-        moonSamples.push({ t: mt, x: mPt.x, y: mPt.y, az: mp.azimuth, alt: mp.altitude });
+  // ── MOON arc — the current (or next upcoming) above-horizon pass,
+  // drawn gray, just inside the sun ring so the two don't overlap.
+  // Rise/set markers come from the REAL findMoonRiseSet() crossings, not
+  // the sampling-window edges (those land at the same clock time 24 h
+  // apart and produced a bogus duplicate "rise == set" label). ──
+  var moonRingR = sunRingR * 0.92;
+  if(typeof moonPosition === 'function' && typeof findMoonRiseSet === 'function'){
+    var MOON_COLOR     = 'rgba(220,226,238,0.98)';
+    var MOON_DIM_COLOR = 'rgba(216,223,236,0.88)';   // brighter so the arc reads clearly
+    var MOON_HALO      = 'rgba(0,0,0,0.6)';
+
+    // Collect rise/set events across yesterday→tomorrow, sort + dedupe.
+    var mEvs = [];
+    for(var dd = -1; dd <= 1; dd++){
+      var mday = new Date(); mday.setDate(mday.getDate() + dd);
+      var mrs = findMoonRiseSet(mday, CONFIG.lat, CONFIG.lng);
+      if(mrs.rise) mEvs.push({ t: mrs.rise.getTime(), kind: 'rise' });
+      if(mrs.set)  mEvs.push({ t: mrs.set.getTime(),  kind: 'set'  });
+    }
+    mEvs.sort(function(a, b){ return a.t - b.t; });
+    var mDed = [];
+    mEvs.forEach(function(e){ if(!mDed.length || e.t - mDed[mDed.length-1].t > 120000) mDed.push(e); });
+
+    // Pick the pass we're in now, else the next one (rise → following set).
+    var nowM = Date.now(), segStart = null, segEnd = null;
+    for(var sidx = 0; sidx < mDed.length - 1; sidx++){
+      if(mDed[sidx].kind === 'rise' && mDed[sidx+1].kind === 'set' && mDed[sidx+1].t >= nowM){
+        segStart = mDed[sidx].t; segEnd = mDed[sidx+1].t; break;
       }
     }
-    if(moonSamples.length >= 2){
-      var mPath = moonSamples.map(function(p, i){
-        return (i === 0 ? 'M ' : 'L ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
-      }).join(' ');
-      // Halo behind the arc for legibility against satellite tiles
-      parts.push('<path d="'+mPath+'" fill="none" stroke="'+MOON_HALO+'" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 4"/>');
-      parts.push('<path d="'+mPath+'" fill="none" stroke="'+MOON_DIM_COLOR+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 4"/>');
 
-      // Current moon position — only if currently above the horizon
+    if(segStart !== null && segEnd !== null && segEnd > segStart){
+      var msamp = [];
+      var mstep = Math.max(4 * 60 * 1000, Math.round((segEnd - segStart) / 120));
+      for(var mt = segStart; mt <= segEnd; mt += mstep){
+        var mp = moonPosition(new Date(mt), CONFIG.lat, CONFIG.lng);
+        if(mp && mp.altitude > 0){
+          var mPt = anglePx(mp.azimuth, moonRingR, cx, cy);
+          msamp.push({ x: mPt.x, y: mPt.y });
+        }
+      }
+      if(msamp.length >= 2){
+        var mPath = msamp.map(function(p, i){
+          return (i === 0 ? 'M ' : 'L ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+        }).join(' ');
+        parts.push('<path d="'+mPath+'" fill="none" stroke="'+MOON_HALO+'" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 4"/>');
+        parts.push('<path d="'+mPath+'" fill="none" stroke="'+MOON_DIM_COLOR+'" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 4"/>');
+      }
+
+      // Gray half-moon-over-horizon glyph — the sun glyph without the rays.
+      function moonGlyph(kind, color){
+        var arrow = kind === 'rise'
+          ? '<path d="M11,9 L13,11 M11,9 L9,11 M11,9 L11,13" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
+          : '<path d="M11,13 L13,11 M11,13 L9,11 M11,13 L11,9" stroke="'+color+'" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>';
+        return '<svg x="-8" y="-8" width="16" height="16" viewBox="0 0 16 16" overflow="visible">' +
+          '<path d="M1,8 A5,5 0 0,1 11,8" fill="'+color+'" opacity="0.9"/>' +
+          '<line x1="0" y1="9" x2="14" y2="9" stroke="'+color+'" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/>' +
+          arrow + '</svg>';
+      }
+      // Real moonrise / moonset markers at their actual azimuths + times.
+      function moonMarker(t, kind){
+        var mp = moonPosition(new Date(t), CONFIG.lat, CONFIG.lng);
+        var outset = anglePx(mp.azimuth, moonRingR + 22, cx, cy);
+        parts.push('<g transform="translate('+(outset.x - 22).toFixed(1)+','+outset.y.toFixed(1)+')">' + moonGlyph(kind, MOON_COLOR) + '</g>');
+        var tm = (typeof formatTime === 'function') ? formatTime(new Date(t)) : '';
+        if(tm){
+          var tp = placeText(outset.x, outset.y, tm.length * 7);
+          parts.push('<text x="'+tp.x.toFixed(1)+'" y="'+tp.y.toFixed(1)+
+                     '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                     ' fill="rgba(225,230,242,1)"' +
+                     ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                     ' text-anchor="middle" dominant-baseline="central">'+tm+'</text>');
+        }
+      }
+      moonMarker(segStart, 'rise');
+      moonMarker(segEnd,   'set');
+
+      // Current moon position — only while it's actually up in this pass.
       var mNow = moonPosition(new Date(), CONFIG.lat, CONFIG.lng);
-      if(mNow && mNow.altitude > 0){
+      if(mNow && mNow.altitude > 0 && nowM >= segStart && nowM <= segEnd){
         var mNowPt = anglePx(mNow.azimuth, moonRingR, cx, cy);
-        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+
-                   '" r="11" fill="rgba(180,210,255,0.16)"/>');
-        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+
-                   '" r="5.5" fill="rgba(0,0,0,0.55)"/>');
-        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+
-                   '" r="4.2" fill="'+MOON_COLOR+'"/>');
-        // Altitude label just outside the disc, same style as the sun
-        var mLbl = anglePx(mNow.azimuth, moonRingR + 20, cx, cy);
-        parts.push('<text x="'+mLbl.x.toFixed(1)+'" y="'+mLbl.y.toFixed(1)+
+        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+'" r="13" fill="rgba(216,223,236,0.28)"/>');
+        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+'" r="6.5" fill="rgba(0,0,0,0.6)"/>');
+        parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+'" r="5" fill="'+MOON_COLOR+'"/>');
+        var mLbl = anglePx(mNow.azimuth, moonRingR + 22, cx, cy);
+        var mlp = placeText(mLbl.x, mLbl.y, 28);
+        parts.push('<text x="'+mlp.x.toFixed(1)+'" y="'+mlp.y.toFixed(1)+
                    '" font-family="ui-monospace, SF Mono, monospace" font-size="11" font-weight="700"' +
-                   ' fill="rgba(210,225,250,1)"' +
+                   ' fill="rgba(220,228,240,1)"' +
                    ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                    ' text-anchor="middle" dominant-baseline="central">' +
                    Math.round(mNow.altitude) + '°</text>');
@@ -5305,14 +5386,32 @@ function updateWindParticles(cx, cy){
     return;
   }
   psvg.style.display = '';
-  var blowDeg = (IPAD.windDir + 180) % 360;     // direction wind blows TO
-  pg.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') rotate(' + blowDeg.toFixed(1) + ')');
+  var blowDeg = (IPAD.windDir + 180) % 360;     // compass bearing wind blows TO
+  // SVG rotate(θ) aligns the drift axis (local +x) with screen angle θ
+  // measured from EAST; a compass azimuth θ points along rotate(θ−90).
+  // Without the −90 the stream flows 90° off the wind arrow.
+  pg.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') rotate(' + (blowDeg - 90).toFixed(1) + ')');
   // Faster wind → shorter animation duration (particles drift quicker)
   var dur = Math.max(2.4, 14 / (1 + IPAD.windSpeed / 2.5));
   pg.style.setProperty('--wind-dur', dur.toFixed(2) + 's');
-  // Push the CSS var down to children too (animation-duration uses it)
-  for(var c = 0; c < pg.children.length; c++){
-    pg.children[c].style.animationDuration = dur.toFixed(2) + 's';
+
+  // Scale the particle field to the actual map so the stream fills the
+  // visible area at any rotation. Travel ≈ map diagonal so dashes sweep
+  // across; even perpendicular spread (stable per index) reads as parallel
+  // streamlines; randomised delays (set at creation) keep flow continuous.
+  var mapEl = document.getElementById('radar-map');
+  var W = mapEl ? mapEl.clientWidth  : 320;
+  var H = mapEl ? mapEl.clientHeight : 260;
+  var diag = Math.hypot(W, H);
+  var travel = Math.round(diag * 0.62);
+  var spread = diag * 1.06;
+  var kids = pg.children, n = kids.length;
+  for(var c = 0; c < n; c++){
+    var el = kids[c];
+    el.style.animationDuration = dur.toFixed(2) + 's';
+    el.style.setProperty('--wind-travel', travel + 'px');
+    var yy = ((c + 0.5) / n - 0.5) * spread;   // even perpendicular spread
+    el.setAttribute('y', yy.toFixed(1));
   }
 }
 

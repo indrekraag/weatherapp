@@ -36,6 +36,32 @@ but rearranges the layout around a big always-on radar map.
 - Sibling note: the phone build (`wa2`) got the same tarktee domain fix the
   same day, plus a port of this kiosk's radar overlay (sun/moon arcs, wind).
 
+### Radar overlay: fixes brought back from wa2 (same session)
+
+While porting the overlay to `wa2` several bugs surfaced and were fixed in
+BOTH builds (`drawOverlay` / `updateWindParticles` / moon block):
+
+- **Wind stripes were invisible** — `#wind-particle-overlay` sat at z-index
+  399, *below* Leaflet's `.leaflet-map-pane` (which is z-index 400 via its
+  transform stacking context), so the tiles covered them. Raised to 410
+  (particles) / 420 (arcs). The map-overlay arcs only showed because they
+  were z-index 400 AND later in the DOM.
+- **Wind stripes flowed 90° off** — SVG `rotate(θ)` aligns the drift axis
+  with screen angle θ from EAST; a compass azimuth is `rotate(θ−90)`. Fixed
+  the group rotation to `blowDeg−90` (verified: drift bearing matches wind
+  to 0.0° at all directions).
+- **Field rescaled** to the map diagonal (travel via `--wind-travel`, even
+  perpendicular spread), denser (24) + brighter so the stream actually fills
+  the map.
+- **Moon arc rewritten** — was sampling a ±12 h window whose two edges fall
+  at the same clock time, producing a bogus duplicate "rise == set" label.
+  Now draws the current (or next) above-horizon pass with rise/set markers
+  from the real `findMoonRiseSet()` crossings, in **gray**, just inside the
+  sun ring; later **brightened** (thicker, denser dashes) for visibility.
+- **`placeText` anti-overlap** nudges each value label radially so sun/moon
+  values never stack.
+- 7-day strip titles → `DD/MM` (no weekday name; `TÄNA` for today).
+
 ## Current layout (iPad landscape)
 
 ```
