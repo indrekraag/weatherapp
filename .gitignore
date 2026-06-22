@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# Local-only rollback snapshots of index.html
+index_backup_*.html

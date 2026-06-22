@@ -62,6 +62,29 @@ BOTH builds (`drawOverlay` / `updateWindParticles` / moon block):
   values never stack.
 - 7-day strip titles → `DD/MM` (no weekday name; `TÄNA` for today).
 
+### Electricity price card (ported from wa2)
+
+Added an **"Elektri hind"** card in the right column **under the radar**.
+
+- Reads the **same `nps.json`** the wa2 GH Actions bridge publishes to
+  weatherapp2's `data` branch (wa1 already cross-reads that branch for
+  EMHI) — **no separate bridge** for the iPad. Source: Elering / Nord Pool
+  day-ahead EE spot price; `fetchNps()` (local `data/nps.json` then the
+  weatherapp2 raw URL), `renderNps()`, `PRICE_STOPS`/`priceBarColor`,
+  `priceSnt` (÷10 ×(1+VAT)).
+- **Layout:** radar-card + price-card wrapped in `.ipad-radar-stack`
+  (display:contents on phone; flex column on iPad as grid row 3). Radar is
+  `flex:1` (fills), price card `flex:0 0 113px`. `syncRadarToForecast` now
+  sizes the **stack** so its bottom aligns with the forecast card — the
+  radar shrinks to make room; the price card sits directly under the map.
+  First-test height ≈ the puhangud/Tuul row (~113px); tune later.
+- Same gridded chart as wa2: Y-axis + gridlines, color tiers
+  (green→orange@10→red@18→purple@50, s/kWh incl 24% VAT), rolling 3h-past
+  (dimmed) → onwards, hour label under each bar, "Hetkel:" current price.
+- Rollback: pre-price-card index saved locally as
+  `index_backup_pre_price_ipad_20260622.html` (gitignored); or
+  `git checkout d9bf060 -- index.html`.
+
 ## Current layout (iPad landscape)
 
 ```

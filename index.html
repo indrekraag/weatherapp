@@ -1727,6 +1727,9 @@ body {
  * of .app and the 10-px gap is preserved between them. In iPad landscape
  * the @media rule below switches it to a real flex column. */
 .ipad-left-col { display: contents; }
+/* Phone: the radar/price wrapper is transparent so both cards flow
+ * normally; on iPad it becomes a flex column (see media query). */
+.ipad-radar-stack { display: contents; }
 
 /* ═══════════════════════════════════════════════════════════════════════
  * iPad LANDSCAPE LAYOUT (1024×768 fullscreen kiosk)
@@ -1756,6 +1759,29 @@ body {
  * Everything below kicks in at ≥900px wide in landscape only. Portrait or
  * small windows fall back to the phone's vertical-scroll layout untouched.
  * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── Electricity price card (gridded chart) — global styles ──────── */
+#price-card .card-header { align-items: baseline; }
+.price-now-wrap { display: flex; align-items: baseline; gap: 3px; }
+.price-now-label { font-size: 11px; color: rgba(255,255,255,0.55); margin-right: 2px; }
+.price-now { font-size: 20px; font-weight: 700; line-height: 1; }
+.price-unit { font-size: 11px; color: rgba(255,255,255,0.55); }
+.price-chart { position: relative; height: 96px; margin-top: 10px; padding-left: 30px; }
+.price-grid  { position: absolute; left: 30px; right: 0; top: 0; bottom: 0; pointer-events: none; }
+.price-gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255,255,255,0.10); }
+.price-gridline.zero { border-top-color: rgba(255,255,255,0.22); }
+.price-gridline > span {
+  position: absolute; right: calc(100% + 5px); top: 0; transform: translateY(-50%);
+  font-size: 9px; color: rgba(255,255,255,0.45); white-space: nowrap;
+}
+.price-bars { position: absolute; left: 30px; right: 0; top: 0; bottom: 0; display: flex; align-items: flex-end; gap: 3px; }
+.price-bars > span { flex: 1 1 0; min-width: 0; border-radius: 2px 2px 0 0; }
+.price-bars > span.past { opacity: 0.45; }
+.price-bars > span.now { outline: 1.5px solid rgba(255,255,255,0.9); outline-offset: -1px; }
+.price-axis { display: flex; gap: 3px; margin-left: 30px; margin-top: 4px; }
+.price-axis > span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 9px; color: rgba(255,255,255,0.45); }
+.price-axis > span.now { color: rgba(255,255,255,0.92); font-weight: 700; }
+
 @media (min-width: 900px) and (orientation: landscape) {
 
   /* Lock to viewport — no scroll, kiosk-style.
@@ -1799,6 +1825,35 @@ body {
     height: 100%;
     min-height: 0;
   }
+
+  /* Right column row 3 holds a flex stack: radar (fills) + price card
+   * (fixed height) directly under it. syncRadarToForecast sizes the stack
+   * so its bottom aligns with the forecast card's bottom. */
+  .ipad-radar-stack {
+    grid-column: 2;
+    grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+  }
+
+  /* Electricity price card — under the radar in the stack. First-test
+   * height ≈ the puhangud (Tuul) forecast row; tune once confirmed. */
+  #price-card {
+    flex: 0 0 113px;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #price-card .card-header { margin-bottom: 2px; flex-shrink: 0; }
+  #price-card .card-header h2 { font-size: 11px; }
+  #price-card .price-now { font-size: 16px; }
+  #price-card .price-now-label { font-size: 10px; }
+  #price-card .price-chart { flex: 1 1 auto; height: auto; min-height: 0; margin-top: 4px; }
+  #price-card .price-axis { margin-top: 2px; }
 
   /* Cards we don't want on the iPad kiosk. Phone build untouched. */
   .alert-banner,
@@ -1927,10 +1982,9 @@ body {
   .seven-day-card .day-rain { font-size: 10px; }
   .seven-day-card .day-wind { font-size: 9.5px; }
 
-  /* RIGHT COLUMN: big radar card in row 3 */
+  /* RIGHT COLUMN: radar card fills the stack above the price card */
   #radar-card {
-    grid-column: 2;
-    grid-row: 3;
+    flex: 1 1 auto;
     padding: 12px 14px 10px;
     display: flex;
     flex-direction: column;
@@ -2504,6 +2558,10 @@ body {
           </div>
         </div>
 
+        <!-- RADAR + PRICE stack — right column. On iPad this wrapper is a
+             flex column (radar fills, price card under it); on phone it's
+             display:contents so both cards flow normally. -->
+        <div class="ipad-radar-stack">
         <!-- RADAR / SATELLIIT MAP ─────────────────────────────────
              RainViewer public API — past 2h radar + infrared satellite.
              No API key required. CORS-open tile server. Leaflet from CDN.
@@ -2559,6 +2617,26 @@ body {
           </div>
           <div class="radar-status" id="radar-status">Laen radaripilte…</div>
         </div>
+
+        <!-- ELEKTRI HIND — sits in the right column UNDER the radar (grid
+             row 4). Reads the same nps.json the wa2 bridge publishes to
+             weatherapp2's data branch. First-test height ≈ puhangud row. -->
+        <div class="glass card" id="price-card">
+          <div class="card-header">
+            <h2>Elektri hind</h2>
+            <div class="price-now-wrap">
+              <span class="price-now-label">Hetkel:</span>
+              <span class="price-now mono" id="price-now">—</span>
+              <span class="price-unit">s/kWh</span>
+            </div>
+          </div>
+          <div class="price-chart">
+            <div class="price-grid" id="price-grid"></div>
+            <div class="price-bars" id="price-spark" aria-hidden="true"></div>
+          </div>
+          <div class="price-axis" id="price-axis"></div>
+        </div>
+        </div> <!-- /.ipad-radar-stack -->
 
         <div class="footer">
           <div class="footer-updated" id="last-updated">Viimati uuendatud: —</div>
@@ -3733,6 +3811,132 @@ function fetchLaaneNigulaFrom(url, onFail){
 function fetchLaaneNigula(){
   fetchLaaneNigulaFrom(EMHI_LOCAL_URL, function(){ fetchLaaneNigulaFrom(EMHI_REMOTE_URL); });
 }
+
+/* ═══════════════════════════════════════════════════════════════
+ * ELECTRICITY PRICE (Nord Pool / Elering) — ported from the phone
+ * build (wa2). The iPad reads the SAME nps.json the wa2 GH Actions
+ * bridge writes to weatherapp2's data branch (no separate bridge).
+ * ═══════════════════════════════════════════════════════════════ */
+var NPS_VAT_PCT = 24;   // replaced by the feed's vat_pct when present
+var PRICE_STOPS = [
+  { v:  0, c: [ 70, 200, 120, 0.90] }, /* free / near-zero — green   */
+  { v:  5, c: [140, 205,  80, 0.90] }, /* cheap — yellow-green       */
+  { v: 10, c: [240, 160,  45, 0.95] }, /* moderate — orange (from 10)*/
+  { v: 18, c: [228,  70,  50, 1.00] }, /* pricey — red (from 18)     */
+  { v: 35, c: [200,  40,  60, 1.00] }, /* expensive — deep red       */
+  { v: 50, c: [150,  60, 205, 1.00] }, /* very expensive — purple    */
+  { v: 90, c: [120,  45, 175, 1.00] }, /* extreme — deep purple      */
+];
+function priceBarColor(snt){
+  var s = PRICE_STOPS;
+  if(snt <= s[0].v) return rgbaStr(s[0].c);
+  if(snt >= s[s.length-1].v) return rgbaStr(s[s.length-1].c);
+  for(var i = 1; i < s.length; i++){
+    if(snt <= s[i].v){
+      var t = (snt - s[i-1].v) / (s[i].v - s[i-1].v);
+      return rgbaStr(lerpColor(s[i-1].c, s[i].c, t));
+    }
+  }
+  return rgbaStr(s[s.length-1].c);
+}
+function priceSnt(eur_mwh){ return eur_mwh / 10 * (1 + NPS_VAT_PCT / 100); }
+
+var NPS_LOCAL_URL  = 'data/nps.json';
+var NPS_REMOTE_URL = 'https://raw.githubusercontent.com/indrekraag/weatherapp2/data/nps.json';
+function fetchNpsFrom(url, onFail){
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', url, true);
+  xhr.timeout = 10000;
+  xhr.onload = function(){
+    if(xhr.status !== 200){ if(onFail) onFail(); return; }
+    try{
+      var data = JSON.parse(xhr.responseText);
+      saveCache('wx.nps', data);
+      renderNps(data);
+    }catch(e){ if(onFail) onFail(); }
+  };
+  xhr.onerror   = function(){ if(onFail) onFail(); };
+  xhr.ontimeout = function(){ if(onFail) onFail(); };
+  xhr.send();
+}
+function fetchNps(){
+  fetchNpsFrom(NPS_LOCAL_URL, function(){ fetchNpsFrom(NPS_REMOTE_URL); });
+}
+function renderNps(data){
+  try{
+    var barsEl = byId('price-spark'), gridEl = byId('price-grid'), axisEl = byId('price-axis');
+    if(!barsEl) return;
+    var prices = (data && data.prices) || [];
+    if(!prices.length) return;
+    if(typeof data.vat_pct === 'number') NPS_VAT_PCT = data.vat_pct;
+    var byTs = {};
+    prices.forEach(function(p){ byTs[p.ts] = p.eur_mwh; });
+
+    // Rolling window: 3 h of context behind, then everything available
+    // ahead. Missing future hours stop the chart (no fabricated bars).
+    var now = new Date();
+    var nowHourMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime();
+    var startMs = nowHourMs - 3 * 3600000;
+    var items = [];
+    for(var i = 0; i < 48; i++){
+      var d = new Date(startMs + i * 3600000);
+      var eur = byTs[Math.floor(d.getTime() / 1000)];
+      if(eur === undefined){ if(d.getTime() < nowHourMs) continue; break; }
+      items.push({ date: d, snt: priceSnt(eur), isNow: d.getTime() === nowHourMs, isPast: d.getTime() < nowHourMs });
+    }
+    if(items.length < 2) return;
+    var maxV = Math.max.apply(null, items.map(function(x){ return x.snt; }));
+    var step = maxV <= 10 ? 2 : maxV <= 20 ? 5 : maxV <= 60 ? 10 : 20;
+    var top = Math.max(step * 2, Math.ceil(maxV / step) * step);
+
+    if(gridEl){
+      gridEl.innerHTML = '';
+      for(var y = 0; y <= top; y += step){
+        var line = document.createElement('div');
+        line.className = 'price-gridline' + (y === 0 ? ' zero' : '');
+        line.style.bottom = (y / top * 100) + '%';
+        var lab = document.createElement('span'); lab.textContent = y;
+        line.appendChild(lab);
+        gridEl.appendChild(line);
+      }
+    }
+
+    var labelEvery = items.length > 22 ? 2 : 1;
+    barsEl.innerHTML = '';
+    if(axisEl) axisEl.innerHTML = '';
+    items.forEach(function(x, idx){
+      var bar = document.createElement('span');
+      bar.style.height = Math.max(2, (x.snt / top) * 100) + '%';
+      var top2 = priceBarColor(x.snt);
+      var base = top2.replace(/[\d.]+\)$/, function(m){ return (parseFloat(m) * 0.30).toFixed(2) + ')'; });
+      bar.style.background = 'linear-gradient(180deg, ' + top2 + ' 0%, ' + base + ' 100%)';
+      bar.setAttribute('title', pad(x.date.getHours()) + ':00 · ' + x.snt.toFixed(1) + ' s/kWh');
+      bar.className = x.isNow ? 'now' : (x.isPast ? 'past' : '');
+      barsEl.appendChild(bar);
+      if(axisEl){
+        var s = document.createElement('span');
+        s.textContent = (x.isNow || idx % labelEvery === 0) ? pad(x.date.getHours()) : '';
+        if(x.isNow) s.className = 'now';
+        axisEl.appendChild(s);
+      }
+    });
+
+    var nowItem = items.filter(function(x){ return x.isNow; })[0];
+    var nowEl = byId('price-now');
+    if(nowEl && nowItem){
+      nowEl.textContent = nowItem.snt.toFixed(1);
+      nowEl.style.color = priceBarColor(nowItem.snt).replace(/[\d.]+\)$/, '1)');
+    }
+    var future = items.filter(function(x){ return !x.isPast; });
+    if(future.length){
+      var minH = future.reduce(function(a, b){ return b.snt < a.snt ? b : a; });
+      var maxH = future.reduce(function(a, b){ return b.snt > a.snt ? b : a; });
+      if(byId('price-min')) byId('price-min').textContent = pad(minH.date.getHours()) + ':00 · ' + minH.snt.toFixed(1);
+      if(byId('price-max')) byId('price-max').textContent = pad(maxH.date.getHours()) + ':00 · ' + maxH.snt.toFixed(1);
+    }
+    if(byId('price-status')) byId('price-status').textContent = 's/kWh · käibemaksuga (' + NPS_VAT_PCT + '%) · Nord Pool / Elering';
+  }catch(e){ console.warn('renderNps error', e); }
+}
 function fetchKurevere(){
   /* Routing, in preference order:
    *   1. github.io build → the wa1 `data` branch bundle on
@@ -4433,6 +4637,8 @@ function hydrateFromCache(){
   if(k) renderKurevere(k.data);
   var l = loadCache('wx.laanenigula');
   if(l){ renderLaaneNigula(l.data); renderHaapsalu(l.data); }
+  var np = loadCache('wx.nps');
+  if(np) renderNps(np.data);
 }
 hydrateFromCache();
 
@@ -4470,6 +4676,8 @@ fetchKurevere();
 setInterval(fetchKurevere, 5 * 60 * 1000);
 fetchLaaneNigula();
 setInterval(fetchLaaneNigula, 5 * 60 * 1000);
+fetchNps();
+setInterval(fetchNps, 15 * 60 * 1000);
 
 /* ─── Hourly hard reload ──────────────────────────────────────────
  * Reloads the page once per hour so any code deployments are picked
@@ -4874,14 +5082,17 @@ function initIpadEnhancements(){
 function syncRadarToForecast(){
   if(!IPAD.active) return;
   var fc = document.querySelector('.forecast-card');
-  var rc = document.getElementById('radar-card');
-  if(!fc || !rc) return;
-  var fcBottom = fc.getBoundingClientRect().bottom;
-  var rcTop    = rc.getBoundingClientRect().top;
-  var newHeight = fcBottom - rcTop;
+  var stack = document.querySelector('.ipad-radar-stack');
+  if(!fc || !stack) return;
+  // Size the whole radar+price stack so its bottom aligns with the
+  // forecast card's bottom. The radar (flex:1) fills the stack minus the
+  // fixed-height price card, so the price card sits directly under the map.
+  var fcBottom  = fc.getBoundingClientRect().bottom;
+  var stackTop  = stack.getBoundingClientRect().top;
+  var newHeight = fcBottom - stackTop;
   if(newHeight < 150 || newHeight > window.innerHeight) return;
-  if(Math.abs(rc.offsetHeight - newHeight) < 2) return;       // no-op if unchanged
-  rc.style.height = newHeight + 'px';
+  if(Math.abs(stack.offsetHeight - newHeight) < 2) return;     // no-op if unchanged
+  stack.style.height = newHeight + 'px';
   if(RADAR && RADAR.map) RADAR.map.invalidateSize();
   drawOverlay();
 }
