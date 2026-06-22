@@ -232,6 +232,12 @@ python3 server.py 8765          # custom server with /api/* proxies
 
 ## Open items / next steps
 
+0. **Electricity price card (just shipped, `e0298e5`).** Live under the
+   radar. Follow-ups: tune the card **height/density** (currently ≈113 px /
+   puhangud row; with tomorrow published it shows ~37 hourly bars — could
+   cap the look-ahead, e.g. now-3h → +18h, for chunkier bars); optional
+   "cheapest upcoming window" highlight. The peak + current-hour value tags
+   are iPad-only; the mobile `wa2` card hasn't got them yet (sync TODO).
 1. **Warning bar layout fix.** Re-add `#warning-bar` to the iPad grid
    without breaking column alignment. Options to try: skinnier idle
    state (height: 22 px max), or push it OUTSIDE `.app` into a fixed
