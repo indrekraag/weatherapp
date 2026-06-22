@@ -1,6 +1,6 @@
 # Madise iPad weather kiosk — session handoff
 
-Last updated: 2026-05-24
+Last updated: 2026-06-22
 
 ## What this project is
 
@@ -15,6 +15,26 @@ but rearranges the layout around a big always-on radar map.
   as the stylistic reference and as the upstream for the EMHI station
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
+
+## Latest session (2026-06-22) — tarktee domain fix + 7-day dates
+
+- **Kurevere bridge was silently broken for ~18 days.** tarktee migrated
+  `tarktee.mnt.ee → tarktee.transpordiamet.ee` (~2026-06-04). The old host
+  301-redirects; the GH Actions runner couldn't complete the cross-domain
+  hop, so the cron hit its soft-fail path every 15 min — **green runs, no
+  data pushed** (the 2026-06-08 "don't email on transient outages" hardening
+  masked a permanent break). Data branch was frozen at 2026-06-04.
+  **Fix (`54cfd29`):** point `fetch_kurevere.py` + `server.py` directly at
+  the new canonical URL (no longer rely on the redirect). Verified end-to-end:
+  push-triggered run pushed a fresh snapshot; cron is live again.
+- **7-day strip:** day names now carry the date — `TÄNA` (today, no date),
+  then `TEIS 23`, `KOLM 24`, … (`renderDaily`, abbreviation + `d.getDate()`).
+- Added `.gitignore` (`__pycache__`).
+- **Lesson:** a soft-fail that swallows *all* errors can hide a permanent
+  outage behind green checkmarks. Open follow-up: make the cron surface a
+  hard failure / staleness flag after N consecutive misses.
+- Sibling note: the phone build (`wa2`) got the same tarktee domain fix the
+  same day, plus a port of this kiosk's radar overlay (sun/moon arcs, wind).
 
 ## Current layout (iPad landscape)
 
