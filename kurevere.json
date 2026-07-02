@@ -1,0 +1,21 @@
+{
+  "source": "tarktee.transpordiamet.ee",
+  "source_url": "https://tarktee.transpordiamet.ee/tarktee/rest/services/road_weather_stations/MapServer/0/query?where=site_name=%27Kurevere%27&outFields=*&f=json",
+  "fetched_at": "2026-07-02T14:35:54Z",
+  "features": [
+    {
+      "attributes": {
+        "site_name": "Kurevere",
+        "air_temp": 20.5,
+        "road_temp": 30.0,
+        "wind_speed": 1.4,
+        "wind_dir": 154,
+        "precipitation_type": "NO_PRECIPITATION",
+        "precipitation_intensity": 0.0,
+        "air_humidity": 52.0,
+        "visibility": 20000,
+        "measurement_time": 1780596000000
+      }
+    }
+  ]
+}
