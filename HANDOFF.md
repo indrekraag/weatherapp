@@ -16,7 +16,68 @@ but rearranges the layout around a big always-on radar map.
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
 
-## Latest session (2026-09-18) — tarktee froze again; found the live path
+## Latest session (2026-09-18b) — forecast audit: icons that over-promised rain
+
+Audit of the card logic against 194 days of actuals (ERA5, Madise,
+2026-03-01 → 09-10). Three fixes shipped; the rest is logged below as
+open items.
+
+### 1. The 7-day icon had no amount threshold (the reported symptom)
+
+`renderDaily` drew `weatherCodeToSVG(daily.weathercode[i])`, and
+Open-Meteo's daily weathercode is the **maximum hourly code of the day** —
+so one hour of light drizzle painted all 24. Measured: the strip showed a
+precipitation icon on **116 of 194 days**, and **38 of those delivered
+under 1 mm**; 24% had ≤2 precipitation hours. Every false alarm was code
+**51/53** (light drizzle, median 0.4 mm) — so the cure is a threshold on
+the *amount*, not a remap of codes.
+
+New `dailyPrecipIcon(daily, i, hourly)` + `dominantSkyCode()`:
+- show precipitation from **≥1.0 mm**, or **≥0.3 mm if it lasts ≥3 h**
+- **snow** gets a lower bar (0.3 mm water ≈ 3 mm snow)
+- **thunder and freezing rain are never suppressed** at any amount —
+  0.2 mm of ice is the entire point
+- below threshold, fall back to the day's **dominant daylight sky**
+  (mode of the hourly cloud codes), not to a blank
+
+Replayed through the shipped function: false alarms **38 → 12**, real rain
+days missed **0** (precision 67% → 87%, recall stays 100%). 26 days
+reclassified: 12 → clear, 13 → overcast, 1 → mainly clear.
+`&daily=` now also requests `precipitation_hours` and
+`precipitation_probability_max` (the latter is not rendered yet — see
+open items).
+
+### 2. The probability colour ramp was compressed into its bottom eighth
+
+`rainBarColor` borrowed the mm stops through the mapping
+`[0,1,3,12,30,55,100]`. A **10%** chance was painted the same violet as
+**2 mm/h** of real rain; **30%** came out the heavy-5mm purple; **50%**
+read as very-heavy-10mm. Replaced with a proper likelihood scale,
+`RAIN_STOPS_PROB` (0/20/40/60/80/100), topping out at purple-red rather
+than the 20mm/h extreme red. `RAIN_LEGEND_PROB` is now **generated from
+that same array**, so the strip can never again disagree with the bars —
+the hand-written version had drifted 2–3 tiers (it labelled 30% light blue
+while the bar drew heavy purple).
+
+**Scope note:** the iPad forces `setRainMode('mm')` in
+`initIpadEnhancements()`, and the legend is `display:none` in the
+landscape media query — so on *this* build the ramp is only visible after
+tapping TÕENÄOSUS, and the legend never is. Both matter much more on the
+phone build (`wa2`), where probability is the default and the legend
+shows. **Not yet ported to wa2.**
+
+### 3. Öökülm showed a minimum that had usually already happened
+
+The pill read `daily.temperature_2m_min[0]` — *today's* min, which after
+~09:00 is behind you. Evaluated at 14:00 across 193 days: off by ≥2 °C on
+**33%** of days, and the frost colour band was **wrong on 11%**. The
+errors run optimistic, the harmful direction: **17 April showed +4.8 °C
+green "safe" while the night ahead reached +0.1 °C**; 5 March showed amber
+"caution" for a night that hit −2.2 °C. New `tonightMinTemp(hourly)` takes
+the minimum over **now → 09:00 tomorrow**, and returns null (falling back
+to the daily figure) rather than inventing a number.
+
+## Previous session (2026-09-18) — tarktee froze again; found the live path
 
 **Kurevere was dead again — and the June fix had only been half the story.**
 
@@ -279,6 +340,54 @@ python3 server.py 8765          # custom server with /api/* proxies
 - `README.md` — GitHub Pages publish instructions
 
 ## Open items / next steps
+
+### From the 2026-09-18 forecast audit — found, NOT fixed
+
+These were measured and left alone deliberately; 1–3 above were the ones
+asked for.
+
+-5. **Port the audit fixes to `wa2`.** Fix #2 (probability ramp) matters
+   *more* there: the phone defaults to probability and shows the legend,
+   both of which the iPad hides. #1 and #3 apply identically.
+-4. **UV tile can show a fabricated `0`.** `models=ecmwf_ifs` returns
+   `uv_index: null` for every hour; `round1(null)` is **0**, not null, so
+   the `uv !== null` guard passes and the tile renders a confident
+   "0 · puudub". It only looks right because EMHI Haapsalu usually
+   supplies `uvindex` — whenever that is missing you get a false zero.
+   Verified: `ecmwf_ifs` → None, default blend → 1.4. Fix = drop the
+   forced model, or test for null properly and show "—".
+-3. **Nähtavus sub-label is hardcoded.** `<div class="metric-sub">selge</div>`
+   (no id, nothing writes to it) — the tile read "5.7 km · selge", and
+   5.7 km is haze. Either drive it from `visText` or delete the line.
+-2. **Hero icon is always the daytime variant.** `is_day` is not in the
+   `current=` request, so `curIsDay` falls back to `1`: a bright sun at
+   23:00 on a clear night. `hourly.is_day` is already fetched.
+-1a. **Five different precipitation thresholds** across the app (icon: none
+   → now amount-based; dry dash 0.1 mm/day; `currentSkyText` 0.1 / 2;
+   `updateRainStart` 0.2 mm/h; `checkAlerts` 3 mm/h **and** code ∈
+   {65,67,82}). The last is effectively dead — that conjunction almost
+   never occurs in a 25 km model, so the *icon* fires on 0.1 mm while the
+   actual warning needs a cloudburst. There is also an `else if` there
+   that stops a heavy-rain hour registering once a thunder hour is found.
+-1b. **Pressure trend default is `'↗ stabiilne'`** — a rising arrow next to
+   the word "stable". `PRESSURE_HISTORY` is in-memory, so after every
+   reload the kiosk claims this for 2 h before a real trend exists.
+   Hourly `surface_pressure` is already fetched; a real 3 h tendency is
+   computable immediately.
+-1c. **Show `precipitation_probability_max` on the 7-day strip.** Already
+   requested as of this session, not rendered. Commercial strips print the
+   PoP next to the icon so the reader can calibrate; ours shows mm only.
+-1d. Minor: duplicate SVG gradient `id`s across repeated icons;
+   `SPARK_RAIN_DATA` fabricates a flat 50% if probability is ever missing;
+   `visibilitychange` re-fetches weather/stations but not NPS/pollen/
+   aurora; `round1(null) → 0` used throughout; code 1 renders
+   sun-behind-cloud by day but a plain moon at night.
+
+   Checked and found **clean**: a precipitation icon next to a "—" mm value
+   (0 occurrences in 194 days) and the heavier rain/thunder icon on a
+   sub-1 mm day (0 occurrences). The over-promising was entirely drizzle.
+
+### Older
 
 -1. **`wa2` needs the same tram fix.** The phone build shares this bridge
    pattern and is almost certainly pointed at the frozen root endpoint too
