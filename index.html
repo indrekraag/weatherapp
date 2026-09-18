@@ -2026,14 +2026,22 @@ body {
   /* RIGHT COLUMN: radar card fills the stack above the price card */
   #radar-card {
     flex: 1 1 auto;
-    padding: 12px 14px 10px;
+    /* Top padding trimmed to match the bottom now that the card has no
+       header to sit under. */
+    padding: 10px 14px 10px;
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
-  #radar-card .card-header { margin-bottom: 8px; flex-shrink: 0; }
-  #radar-card .card-header h2 { font-size: 12px; }
+  /* "VIHMARADAR" title hidden on the kiosk. On a wall display the map is
+     self-evident — nobody needs a label to recognise a radar — and the
+     strip of chrome cost ~24px of map height, which is the one thing on
+     this screen that genuinely benefits from every pixel. #radar-map is
+     flex:1, so the space goes straight to the map.
+     Kept in the markup (not deleted) for the phone fallback layout, where
+     the card is one of several stacked and the label helps you scan. */
+  #radar-card .card-header { display: none; }
   #radar-map {
     flex: 1 1 auto;
     height: auto !important;          /* override the phone's inline 260px */
@@ -2721,8 +2729,8 @@ body {
  *     successful deploy look like it never landed. See HANDOFF.md
  *     ("Deployment"). If this gets forgotten twice, automate it.
  */
-var APP_VERSION = 'v1.0.0';
-var APP_BUILT   = '18.09 21:14';
+var APP_VERSION = 'v1.1.0';
+var APP_BUILT   = '18.09 21:29';
 
 var CONFIG = { lat:58.81627, lng:23.74447, label:'Madise', weatherRefreshMs:5*60*1000 };
 var PRESSURE_HISTORY = [];

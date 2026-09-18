@@ -16,6 +16,24 @@ but rearranges the layout around a big always-on radar map.
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
 
+### Radar card title removed (same session)
+
+`VIHMARADAR` is hidden on the kiosk — `#radar-card .card-header
+{ display: none }` in the landscape media query — and the card's top
+padding trimmed 12px → 10px to match the bottom now that nothing sits
+above the map. On a wall display the map is self-evident; the label cost
+map height, which is the one thing on this screen that benefits from
+every pixel.
+
+Measured A/B at an identical viewport: **map 402px → 423px (+21px)**, with
+`leftColOverflow` and the column-bottom misalignment *byte-identical*
+before and after, Leaflet's internal size matching the DOM (no stale-size
+grey tiles), and `#map-overlay` / `#wind-particle-overlay` both tracking
+the new height with the arcs redrawn.
+
+The `<h2>` stays in the markup for the phone fallback layout, where the
+card is one of several stacked and the label helps scanning.
+
 ### Build stamp in the hero bar (same session)
 
 Added `APP_VERSION` + `APP_BUILT`, rendered under the date as
