@@ -288,8 +288,17 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  flex-wrap: nowrap;
-  overflow: hidden;
+  /* Was nowrap + overflow:hidden. The build stamp is the widest item in
+     here and on the iPad's narrow left column there is not room for all
+     of it on one line — with nowrap the date broke mid-word ("18. /
+     september"). Wrapping lets the stamp drop to its own line as a whole
+     unit instead, and the nowrap on the children below keeps any single
+     item from ever splitting. */
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.hero-bar-date > span {
+  white-space: nowrap;
 }
 .hero-bar-date .weekday {
   font-weight: 600;
@@ -306,6 +315,19 @@ body {
 }
 .hero-bar-date .dot-sep {
   color: rgba(255,255,255,0.50);
+}
+/* Build stamp — which build is on screen and when it was pushed.
+   Deliberately dimmer (0.34 vs the clock's 0.92) and smaller (0.8em) than
+   the live date/time it sits beside: it is a version marker, not a
+   reading, and must never be misread as the current time. Sized in `em`
+   so it keeps its proportion when the iPad rule shrinks .hero-bar-date. */
+.hero-bar-date .build-stamp {
+  margin-left: 2px;
+  font-size: 0.8em;
+  font-weight: 500;
+  color: rgba(255,255,255,0.34);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 .hero-bar-sync {
@@ -2265,6 +2287,9 @@ body {
               <span class="datestamp" id="datestamp">19. mai</span>
               <span class="dot-sep">·</span>
               <span class="hero-clock mono" id="clock">14:32</span>
+              <!-- Build stamp: which version is actually on screen. Dimmer
+                   and smaller than the clock on purpose — see the CSS. -->
+              <span class="build-stamp mono" id="build-stamp"></span>
             </div>
             <div class="hero-bar-sync">
               <button class="hero-refresh-btn" id="refresh-btn" title="Uuenda" onclick="manualRefresh()">↻</button>
@@ -2682,6 +2707,23 @@ body {
  *   • Astronomical (sun, moon) — local computation
  * ═════════════════════════════════════════════════════════════════════ */
 
+/* ─── Build stamp ─────────────────────────────────────────────────────
+ * Identifies the build actually running, so a glance at the kiosk answers
+ * "is the iPad showing my latest push, or a cached older page?".
+ *
+ * Baked in rather than fetched on purpose: asking GitHub for the newest
+ * commit would always report the newest, which is precisely the question
+ * it cannot answer. Only a value carried inside the file can tell you
+ * which file you are looking at.
+ *
+ * ⚠️  BUMP BOTH WHENEVER index.html IS DEPLOYED. There is no build step to
+ *     do it for you, and a stale stamp is worse than none — it makes a
+ *     successful deploy look like it never landed. See HANDOFF.md
+ *     ("Deployment"). If this gets forgotten twice, automate it.
+ */
+var APP_VERSION = 'v1.0.0';
+var APP_BUILT   = '18.09 21:14';
+
 var CONFIG = { lat:58.81627, lng:23.74447, label:'Madise', weatherRefreshMs:5*60*1000 };
 var PRESSURE_HISTORY = [];
 var TODAY_SUNRISE_MS = null, TODAY_SUNSET_MS = null;
@@ -2708,6 +2750,10 @@ function formatTime(d){ return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   }
   tick();
   setInterval(tick, 30 * 1000);
+
+  /* Written once: a build stamp cannot change without a reload. */
+  var bs = byId('build-stamp');
+  if(bs) bs.textContent = APP_VERSION + ' · ' + APP_BUILT;
 })();
 
 /* ─── Stale-data indicator ─────────────────────────────────────────

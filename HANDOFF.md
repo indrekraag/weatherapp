@@ -16,6 +16,21 @@ but rearranges the layout around a big always-on radar map.
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
 
+### Build stamp in the hero bar (same session)
+
+Added `APP_VERSION` + `APP_BUILT`, rendered under the date as
+`v1.0.0 · 18.09 21:14` in `.build-stamp` — 0.8em and 34% white against the
+clock's 92%, so it cannot be misread as a second clock. See **Deployment**
+for the bump rule.
+
+`.hero-bar-date` had to change from `flex-wrap: nowrap; overflow: hidden`
+to `flex-wrap: wrap` with `white-space: nowrap` on the children: the stamp
+is the widest item in that strip and on the iPad's narrow left column
+there is no room for it inline, so with `nowrap` the date broke mid-word
+("18. / september"). It now drops to its own line as a whole unit.
+Measured after the change: `.ipad-left-col` still not overflowing, body
+still not scrolling at 1024×768.
+
 ## Latest session (2026-09-18b) — forecast audit: icons that over-promised rain
 
 Audit of the card logic against 194 days of actuals (ERA5, Madise,
@@ -316,6 +331,33 @@ Added an **"Elektri hind"** card in the right column **under the radar**.
 | PILV cloud overlay (RainViewer IR) | **removed** | RainViewer's `satellite.infrared` array comes back empty too often |
 | PILV cloud overlay (OpenWeatherMap) | **gated** | Button hidden until `window.OWM_KEY` is set in the `<script>` near the top of `<body>`. Get a free key from https://openweathermap.org/api and paste it. |
 | Lightning strikes | **not started** | Free CORS-friendly source TBD — Blitzortung WS needs proxying, NASA GIBS has no Europe IR, OWM requires a paid plan for strikes |
+
+## Deployment — and the build stamp
+
+Push to `main` → GitHub Pages serves it. **Before you push a change to
+`index.html`, bump the build stamp at the top of the main `<script>`:**
+
+```js
+var APP_VERSION = 'v1.0.0';      // bump for a real change
+var APP_BUILT   = '18.09 21:15'; // dd.mm HH:MM, local, when you pushed
+```
+
+It renders in the hero bar under the date, small and dim (`.build-stamp`,
+34% white vs the clock's 92%) so it reads as a version marker rather than
+a second clock. Its whole job is to answer, at a glance at the kiosk,
+*"is the iPad showing my latest push or a cached older page?"* — which is
+why it is baked into the file rather than fetched. Asking GitHub for the
+newest commit would always return the newest, which is precisely the
+question it cannot answer; only a value carried inside the file tells you
+which file you are looking at.
+
+**A stale stamp is worse than no stamp** — it makes a successful deploy
+look like it never landed. If this gets forgotten twice, automate it (a
+GH Action on `push: paths: [index.html]` that rewrites `APP_BUILT` and
+commits back with a marker in the message to break the trigger loop).
+
+To force the iPad to pick up a new build: the **⟲** button in the hero bar
+clears localStorage + service-worker caches in place.
 
 ## How to run locally
 
