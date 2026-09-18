@@ -16,6 +16,48 @@ but rearranges the layout around a big always-on radar map.
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
 
+### Reclaiming the wasted bottom strip (2026-09-19)
+
+Measured at a simulated true 1024×768 budget: the forecast card ended
+**83px above** the bottom of its column, and because
+`syncRadarToForecast()` pins the radar stack to *that card's bottom*, the
+map was shortened to match — leaving **64px of dead screen** under it.
+Roughly a tenth of the display was empty.
+
+**The counter-intuitive part, worth remembering before "saving space"
+here again:** cutting hero content does NOT give the map room. The stack
+height is `forecastCard.bottom − stack.top`, so trimming the hero moves
+the forecast card *up* and makes the radar *shorter*. Left-column cuts and
+map size are independent.
+
+1. **`.forecast-card { flex: 1 1 auto }`** — the card now fills the
+   column, so its bottom lands at the column bottom and the existing sync
+   function (unchanged) walks the radar down with it.
+   **Map 341px → 405px (+19%).** Both columns now reach the app bottom
+   exactly (measured 0px slack, 0px misalignment).
+   The reclaimed height is passed down to the bars rather than pooling as
+   blank space: `.forecast-row` flexes and `.metric-spark` grows from its
+   fixed 14px (**14px → 59px at kiosk size**). `renderSpark()` needed no
+   change — it already sizes bars as a percentage of their container.
+   `.forecast-row-feels` is pinned `flex: 0 0 auto` so the hidden row
+   claims no share.
+2. **Second metric row dropped** (`.metric-secondary`, hidden in the media
+   query) — **59px**. Two of its three tiles were known-wrong anyway: UV
+   renders a fabricated `0`, and the Nähtavus sub-label is hardcoded
+   "selge". Humidity survives implicitly via the Kastepunkt pill. Note a
+   whole grid row must go — hiding one tile of three reclaims nothing.
+3. **`.hero-title` dropped** — **19px**. "HETKEILM MADISEL" is redundant
+   when the whole screen is one location. The condition text is kept:
+   `initIpadEnhancements()` moves `#wx-cond` into `.hero-main` so it sits
+   under the big temperature. Done in JS, not markup, so the phone keeps
+   its header; the id is unchanged so `renderWeather()` is untouched.
+
+Verified: no left-column scrolling, Leaflet's size matching the DOM, both
+SVG overlays tracking, all five sparklines rendering.
+
+**⚠️ This exposed a real bug** — see open items. With the condition text
+now beside the hero icon, they visibly contradict each other.
+
 ### Radar card title removed (same session)
 
 `VIHMARADAR` is hidden on the kiosk — `#radar-card .card-header
@@ -400,6 +442,24 @@ python3 server.py 8765          # custom server with /api/* proxies
 - `README.md` — GitHub Pages publish instructions
 
 ## Open items / next steps
+
+### Found 2026-09-19 — hero icon contradicts the hero text
+
+Moving the condition line next to the icon (above) made a pre-existing
+bug obvious. At 02:10 the card read **"SELGE"** beside an icon **drawing
+raindrops**, from the same data:
+
+- text: `currentSkyText(cloud_cover=16, precipitation=0)` → "Selge"
+- icon: `hourly.weathercode[curIdx]` = **51 (drizzle)** → drizzle glyph
+
+Cloud cover 16% with zero precipitation says the text is right and the
+WMO code is the outlier. This is the **same disease as the 7-day strip** —
+a code asserting precipitation the amount does not support — and the cure
+already exists: `wa2` guards its hero with
+`skyIconSVG(code, precipAmt, isDay)`, which suppresses the glyph below
+`RAIN_MIN_MM`. **wa1 has no `skyIconSVG` at all** and calls
+`weatherCodeToSVG()` directly, so it has no guard. Port it, or gate the
+hero icon on `current.precipitation`.
 
 ### From the 2026-09-18 forecast audit — found, NOT fixed
 

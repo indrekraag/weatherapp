@@ -1967,9 +1967,23 @@ body {
    * viewport minus warning bar / Safari URL bar) WITHOUT scrolling. */
   .hero-bar { padding: 1px 0 6px; margin-bottom: 0; }
   .hero-bar-date { font-size: 10.5px; }
-  .hero-title { margin-bottom: 0; }
-  .hero-title h2 { font-size: 9.5px; }
+  /* (3) The "HETKEILM MADISEL" header row is dropped on the kiosk — the
+     label is redundant when the whole screen is one location, the same
+     argument that removed VIHMARADAR. Worth 19px. The condition text is
+     NOT dropped: initIpadEnhancements() moves #wx-cond into .hero-main so
+     it sits under the big temperature, where it reads better anyway. */
+  .hero-title { display: none; }
   .hero-condition { font-size: 9px; }
+  /* #wx-cond after its move: row 2 of the .hero-main grid, under the
+     temperature rather than beside the icon. */
+  .hero-main > .hero-condition {
+    grid-column: 1;
+    margin-top: -2px;
+  }
+
+  /* (2) Second metric row — see the markup comment. 59px; a whole grid
+     row has to go, because hiding one tile of three reclaims nothing. */
+  .hero-readings .metric-secondary { display: none; }
   .hero-main { padding: 0 2px 2px; gap: 8px; }
   .temp-big { font-size: 52px; line-height: 0.88; }
   .temp-big .deg { font-size: 22px; }
@@ -2205,7 +2219,39 @@ body {
   .forecast-card .forecast-row-label { font-size: 10px; letter-spacing: 0.8px; }
   .forecast-card .forecast-row-sub { font-size: 10px; }
   .forecast-card .forecast-row-val { font-size: 11px; }
-  .forecast-card .metric-spark { height: 14px; margin-top: 2px; gap: 1px; }
+  /* (1) THE BIG ONE. The forecast card used to be natural-height, so it
+     ended 83px above the bottom of its column — and because
+     syncRadarToForecast() pins the radar stack to THIS card's bottom, the
+     map was shortened to match, leaving 64px of dead screen under it.
+     Making the card fill the column fixes both at once: the card now ends
+     at the column bottom, so the existing sync function (unchanged) walks
+     the radar down with it. Measured: map 341px → 405px, +19%.
+
+     The reclaimed height is then handed down to the bars rather than
+     pooling as blank space inside the card — the rows flex, and
+     .metric-spark grows from its fixed 14px. renderSpark() sizes each bar
+     as a percentage of its container, so taller container = taller bars
+     with no JS change. */
+  .forecast-card {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .forecast-card .forecast-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    justify-content: flex-start;
+  }
+  /* The hidden "Tundub kui" row must not claim a share of the free space. */
+  .forecast-card .forecast-row-feels { flex: 0 0 auto; }
+  .forecast-card .metric-spark {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 14px;
+    margin-top: 2px;
+    gap: 1px;
+  }
   .forecast-card .metric-spark-axis { font-size: 8.5px; height: 10px; margin-top: 1px; }
   .forecast-card .metric-spark-dirs { height: 12px; margin-top: 1px; }
   .forecast-card .spark-arrow svg { width: 7px !important; height: 12px !important; }
@@ -2392,16 +2438,23 @@ body {
               <div class="metric-value mono"><span id="wx-pressure">—</span><span class="unit">hPa</span></div>
               <div class="metric-sub" id="wx-pressure-trend">—</div>
             </div>
-            <div class="metric">
+            <!-- Second metric row. Hidden on the iPad kiosk (see the
+                 media query): the row cost 59px and two of its three
+                 tiles are known-wrong — UV renders a fabricated 0 when
+                 Open-Meteo returns null, and this Nähtavus sub-label is
+                 hardcoded "selge" regardless of the reading. Humidity is
+                 inferable from the Kastepunkt pill above. Kept for the
+                 phone layout, where the bugs are still open items. -->
+            <div class="metric metric-secondary">
               <div class="metric-head"><span class="metric-icon">◔</span>Õhuniiskus</div>
               <div class="metric-value mono"><span id="wx-humidity">—</span><span class="unit">%</span></div>
             </div>
-            <div class="metric">
+            <div class="metric metric-secondary">
               <div class="metric-head"><span class="metric-icon">☀</span>UV</div>
               <div class="metric-value mono warn" id="wx-uv">—</div>
               <div class="metric-sub warn" id="wx-uv-label">—</div>
             </div>
-            <div class="metric">
+            <div class="metric metric-secondary">
               <div class="metric-head"><span class="metric-icon">👁</span>Nähtavus</div>
               <div class="metric-value mono"><span id="wx-vis">—</span><span class="unit">km</span></div>
               <div class="metric-sub">selge</div>
@@ -2729,8 +2782,8 @@ body {
  *     successful deploy look like it never landed. See HANDOFF.md
  *     ("Deployment"). If this gets forgotten twice, automate it.
  */
-var APP_VERSION = 'v1.1.0';
-var APP_BUILT   = '18.09 21:29';
+var APP_VERSION = 'v1.2.0';
+var APP_BUILT   = '19.09 02:12';
 
 var CONFIG = { lat:58.81627, lng:23.74447, label:'Madise', weatherRefreshMs:5*60*1000 };
 var PRESSURE_HISTORY = [];
@@ -5240,6 +5293,17 @@ function initIpadEnhancements(){
   // default "tõenäosus" (probability) — when you're staring at the radar
   // map the relevant question is amount, not likelihood.
   if(typeof setRainMode === 'function'){ setRainMode('mm'); }
+
+  /* The "Hetkeilm madisel" header row is hidden on the kiosk (CSS), so
+     move the condition text it contained down into the temperature block
+     before that row disappears. Done here rather than in the markup so
+     the phone layout keeps its original header. #wx-cond keeps its id, so
+     renderWeather() goes on writing to it untouched. */
+  var condEl = document.getElementById('wx-cond');
+  var heroMain = document.querySelector('.hero-main');
+  if(condEl && heroMain && condEl.parentNode !== heroMain){
+    heroMain.appendChild(condEl);
+  }
 
   // Reveal the OpenWeatherMap clouds button only when a key is set.
   if(window.OWM_KEY){
