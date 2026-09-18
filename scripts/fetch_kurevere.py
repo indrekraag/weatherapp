@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Fetch the Kurevere road-weather station from tarktee.mnt.ee and emit
-a JSON snapshot the iPad can read via raw.githubusercontent.com.
+"""Fetch the Kurevere road-weather station from tarktee and emit a JSON
+snapshot the iPad can read via raw.githubusercontent.com.
 
 Why this script exists:
-  The tarktee.mnt.ee ArcGIS REST endpoint does send CORS headers, but
+  The tarktee ArcGIS REST endpoint does send CORS headers, but
   this particular iPad refuses to reach the host (network error firing
   inside the browser even though curl from the same Wi-Fi works fine —
   probably a content blocker or stricter TLS profile on iPadOS for this
@@ -15,11 +15,20 @@ Why this script exists:
 Usage:
     python3 scripts/fetch_kurevere.py --out /tmp/kurevere.json
 
-Network/connection hiccups are retried (3 attempts with backoff). If
-every attempt fails, the script exits 0 *without* writing the output
-file and sets the GitHub Actions step output ``wrote=false``, so the
-workflow skips the push and the data branch keeps its last good
-snapshot — a transient outage no longer emails a cron-failure alert.
+Two different failures are distinguished, because they deserve
+different responses:
+
+  * **Transient** (timeout, 5xx, no features) — retried 3× with backoff.
+    If every attempt fails the script exits 0 *without* writing the file
+    and sets ``wrote=false``, so the workflow skips the push and the data
+    branch keeps its last good snapshot. No alert; blips happen.
+
+  * **Frozen feed** (a 200 response carrying a measurement older than
+    MAX_MEASUREMENT_AGE) — written and published *with* ``stale=true``,
+    and ``stale`` is set as a step output so the workflow can fail the run
+    afterwards. This one alerts, because it never fixes itself: it means
+    the endpoint moved or the station died. Twice now a silent soft-fail
+    let exactly this masquerade as healthy for months.
 """
 
 from __future__ import annotations
@@ -33,14 +42,27 @@ import time
 import urllib.request
 from pathlib import Path
 
-# NOTE: tarktee migrated from mnt.ee → transpordiamet.ee around 2026-06-04.
-# The old host still 301-redirects, but the cron silently soft-failed for
-# weeks against it (GitHub runner couldn't complete the cross-domain hop),
-# so we hit the canonical new URL directly instead of relying on a redirect.
+# NOTE: two migrations have broken this URL now. First the host moved
+# (mnt.ee → transpordiamet.ee, ~2026-06-04). Then — the same day — the
+# ROOT-level ArcGIS services stopped being updated: every layer under
+# /tarktee/rest/services/<name> (all 116 weather stations, the cameras,
+# the traffic detectors) is frozen at 2026-06-04T18:00Z and still answers
+# HTTP 200 with that fossil. The live data moved into the `tram/` folder
+# on the same server, which is what tarktee.ee's own map calls. Verified
+# 2026-09-18: root path 105 days stale, tram path 15 minutes old.
+#
+# The lesson is encoded below as MAX_MEASUREMENT_AGE: a 200 response is
+# NOT evidence of live data. Check the timestamp, always.
 TARKTEE_URL = (
-    "https://tarktee.transpordiamet.ee/tarktee/rest/services/road_weather_stations/"
+    "https://tarktee.transpordiamet.ee/tarktee/rest/services/tram/road_weather_stations/"
     "MapServer/0/query?where=site_name=%27Kurevere%27&outFields=*&f=json"
 )
+
+# A reading older than this means the feed has frozen (moved, decommissioned
+# or the station is down) rather than merely hiccuped. The station normally
+# reports every ~10 min, so 6 h is far beyond any healthy gap while still
+# catching a freeze the same day instead of 105 days later.
+MAX_MEASUREMENT_AGE = dt.timedelta(hours=6)
 TIMEOUT_SECONDS = 15
 
 # Retry policy. tarktee is occasionally slow/unreachable from GitHub's
@@ -55,6 +77,11 @@ FIELDS = [
     "site_name",
     "air_temp",
     "road_temp",
+    # Present on the tram layer, absent from the old root one. Not rendered
+    # yet — carried so the chip can show road state without a bridge change.
+    "road_status",
+    "road_status_aggregate",
+    "grip_factor",
     "wind_speed",
     "wind_dir",
     "precipitation_type",
@@ -85,10 +112,26 @@ def build_snapshot(raw: dict) -> dict:
         raise RuntimeError("tarktee returned no features for Kurevere")
     attrs_raw = features[0].get("attributes") or {}
     attrs = {k: attrs_raw.get(k) for k in FIELDS}
+    now = dt.datetime.now(dt.timezone.utc)
+
+    # measurement_time is epoch milliseconds UTC. Surface it in a form a
+    # human (and the PWA) can read without doing the arithmetic — this is
+    # the field that would have made the 2026-06-04 freeze obvious.
+    measured_at = None
+    age_minutes = None
+    mt = attrs.get("measurement_time")
+    if isinstance(mt, (int, float)):
+        measured = dt.datetime.fromtimestamp(mt / 1000, dt.timezone.utc)
+        measured_at = measured.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        age_minutes = round((now - measured).total_seconds() / 60)
+
     return {
         "source": "tarktee.transpordiamet.ee",
         "source_url": TARKTEE_URL,
-        "fetched_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "fetched_at": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "measured_at": measured_at,
+        "age_minutes": age_minutes,
+        "stale": age_minutes is None or age_minutes > MAX_MEASUREMENT_AGE.total_seconds() / 60,
         # Wrap as a single-feature collection so renderKurevere() in
         # index.html can read it with the same shape as the direct API.
         "features": [{"attributes": attrs}],
@@ -154,6 +197,22 @@ def main() -> int:
     print(f"✓ Kurevere snapshot → {out_path}")
     print(json.dumps(snapshot, indent=2, ensure_ascii=False))
     set_action_output("wrote", "true")
+
+    # A frozen feed still gets published — carrying stale=true is more
+    # useful to the kiosk than an unexplained gap, and it lets the chip
+    # grey itself out. But the workflow fails afterwards so a human finds
+    # out the same day rather than at the next redesign.
+    set_action_output("stale", "true" if snapshot["stale"] else "false")
+    if snapshot["stale"]:
+        print(
+            f"STALE: Kurevere last measured {snapshot['measured_at']} "
+            f"({snapshot['age_minutes']} min ago) — the feed has frozen, not "
+            f"hiccuped. Check whether tarktee moved the endpoint again:\n"
+            f"  {TARKTEE_URL}",
+            file=sys.stderr,
+        )
+    else:
+        print(f"  measured {snapshot['measured_at']} ({snapshot['age_minutes']} min ago)")
     return 0
 
 

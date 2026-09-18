@@ -1,6 +1,6 @@
 name: Fetch Kurevere snapshot
 
-# Every 15 min pull the Kurevere road-weather reading from tarktee.mnt.ee
+# Every 15 min pull the Kurevere road-weather reading from tarktee
 # server-side and force-push it to a 'data' orphan branch. The iPad reads
 # the bundle via raw.githubusercontent.com (CORS-open and reliably
 # reachable from this device, unlike tarktee directly).
@@ -40,7 +40,10 @@ jobs:
         id: fetch
         run: |
           # The script soft-fails (exit 0, no file, wrote=false) on a
-          # transient tarktee outage so the cron doesn't email.
+          # transient tarktee outage so the cron doesn't email. A frozen
+          # feed is different — it writes the file with stale=true and
+          # sets the 'stale' output, which the last step turns into a
+          # real failure.
           python3 scripts/fetch_kurevere.py --out /tmp/kurevere.json
           if [ -f /tmp/kurevere.json ]; then
             echo "--- snapshot ---"
@@ -72,3 +75,15 @@ jobs:
           git push -q --force origin data:data
           echo "✓ Pushed snapshot to 'data' branch"
           echo "  Raw URL: https://raw.githubusercontent.com/${{ github.repository }}/data/kurevere.json"
+
+      # Runs AFTER the push so the kiosk still receives the flagged data.
+      # A 200 response is not evidence of live data: between 2026-06-04 and
+      # 2026-09-18 tarktee's root endpoint served a fossil with a perfectly
+      # healthy status code, and the green checkmarks hid it for 105 days.
+      - name: Fail if the feed is frozen
+        if: steps.fetch.outputs.stale == 'true'
+        run: |
+          echo "::error title=Kurevere feed frozen::tarktee returned 200 but the \
+          measurement is older than 6 h. The endpoint has probably moved again — \
+          check https://tarktee.ee and the 'tram' folder of the ArcGIS services list."
+          exit 1

@@ -1,6 +1,6 @@
 # Madise iPad weather kiosk — session handoff
 
-Last updated: 2026-06-22
+Last updated: 2026-09-18
 
 ## What this project is
 
@@ -16,7 +16,49 @@ but rearranges the layout around a big always-on radar map.
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
 
-## Latest session (2026-06-22) — tarktee domain fix + 7-day dates
+## Latest session (2026-09-18) — tarktee froze again; found the live path
+
+**Kurevere was dead again — and the June fix had only been half the story.**
+
+- **Symptom:** the chip showed a plausible reading that never changed. The
+  bridge looked healthy: green cron runs, `fetched_at` minutes old.
+- **Cause:** `measurement_time` was **2026-06-04T18:00Z** — 105 days old.
+  On the day tarktee moved host (mnt.ee → transpordiamet.ee) it *also*
+  stopped updating every **root-level** ArcGIS service. All 116 weather
+  stations, the road cameras and the traffic detectors are frozen at that
+  one instant and still answer **HTTP 200**. June's fix pointed at the new
+  host but the same dead layer, so it fixed the hop and not the data.
+- **The live data is in the `tram/` folder** of the same ArcGIS server —
+  `/tarktee/rest/services/**tram**/road_weather_stations/MapServer/0/query`.
+  Found by watching what tarktee.ee's own map requests. Verified: root path
+  105 days stale, tram path 15 min old. Both hosts serve it.
+- **Bonus fields** on the tram layer: `road_status` (DRY/MOIST/WET/ICE…),
+  `road_status_aggregate`, `grip_factor`. Now carried in the snapshot,
+  not yet rendered — a chip could show road state with no bridge change.
+- **Closed the open follow-up** from June ("surface a hard failure after N
+  consecutive misses"), which is precisely what would have caught this:
+  - `fetch_kurevere.py` now checks the reading's age against
+    `MAX_MEASUREMENT_AGE` (6 h) and splits two failure modes: a *transient*
+    error still soft-fails silently, but a *frozen feed* is published with
+    `stale: true` **and** sets a `stale` step output.
+  - The workflow gained a **`Fail if the feed is frozen`** step that runs
+    *after* the push — the kiosk still gets the flagged data, and the run
+    goes red so a human hears about it the same day.
+  - Snapshot now also carries `measured_at` + `age_minutes`, so the
+    fossil-vs-fresh question is answerable by reading the JSON.
+- **Display-side guard** (`index.html`): `markStationStale()` dims the chip,
+  greys the temperature and appends an amber `106 p vana` age tag when a
+  reading is older than 6 h. It appends its own element rather than
+  rewriting `.station-sub` — the existing `status()` error path *does*
+  overwrite that node and destroys the `#kv-wind` / `#kv-precip` spans
+  permanently (pre-existing bug, see open items). Verified both ways:
+  fossil → dimmed + tagged, fresh → class and tag removed cleanly.
+- **Lesson, sharpened:** a 200 is not evidence of live data, and neither is
+  a fresh `fetched_at` — that only says *we* ran. Only the upstream's own
+  measurement timestamp proves anything. Every bridge that republishes a
+  third-party feed should assert on it.
+
+## Previous session (2026-06-22) — tarktee domain fix + 7-day dates
 
 - **Kurevere bridge was silently broken for ~18 days.** tarktee migrated
   `tarktee.mnt.ee → tarktee.transpordiamet.ee` (~2026-06-04). The old host
@@ -182,6 +224,12 @@ Added an **"Elektri hind"** card in the right column **under the radar**.
   iPad refuses tarktee directly — likely content blocker / TLS profile;
   Mac + iPhone Safari reach tarktee fine)
 - Local `server.py` proxies `/api/kurevere` for LAN HTTP dev testing
+- **Endpoint (2026-09-18):** must be the **`tram/`** folder —
+  `…/rest/services/tram/road_weather_stations/MapServer/0/query`. The
+  root-level service of the same name is a frozen 2026-06-04 snapshot that
+  still returns 200. Same URL in `fetch_kurevere.py` and `server.py`.
+- **Staleness gate (2026-09-18):** a reading older than 6 h is published
+  with `stale: true` and fails the workflow run on purpose.
 - **Hardened 2026-06-08:** the cron retries tarktee **3× with backoff
   (5 s, 15 s)** and **soft-fails** (exit 0, no file, push step skipped) if
   every attempt fails — so a transient tarktee outage leaves the last good
@@ -232,7 +280,22 @@ python3 server.py 8765          # custom server with /api/* proxies
 
 ## Open items / next steps
 
-0. **Electricity price card (just shipped, `e0298e5`).** Live under the
+-1. **`wa2` needs the same tram fix.** The phone build shares this bridge
+   pattern and is almost certainly pointed at the frozen root endpoint too
+   — check its `fetch_kurevere.py` equivalent. **Do this first**; it is the
+   same one-line change plus the staleness gate.
+0a. **Render `road_status` / `grip_factor`.** The tram layer supplies road
+   state (DRY / MOIST / WET / ICE / SNOW) and a grip factor, both already
+   carried in the snapshot. On a winter wall display "tee: jäide" is worth
+   more than road temperature alone. No bridge change needed — only
+   `renderKurevere()` plus a line in the chip.
+0b. **`status()` destroys the Kurevere chip's value spans.** The error path
+   in `fetchKurevere()` sets `.station-sub`'s `textContent`, which deletes
+   `#kv-wind` and `#kv-precip` for good — after one transient failure those
+   two values stay blank until a reload. Pre-existing, unrelated to this
+   session, but it undermines the same chip. Fix by writing to a child
+   element (`markStationStale()` shows the shape).
+0. **Electricity price card (shipped `e0298e5`).** Live under the
    radar. Follow-ups: tune the card **height/density** (currently ≈113 px /
    puhangud row; with tomorrow published it shows ~37 hourly bars — could
    cap the look-ahead, e.g. now-3h → +18h, for chunkier bars); optional

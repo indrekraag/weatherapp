@@ -748,6 +748,17 @@ body {
   color: var(--fg-2);
   letter-spacing: 0.3px;
 }
+/* A station whose last reading is hours old. The whole point of a wall
+   display is that you trust it at a glance, so a fossil must not be able
+   to pass for a current reading — tarktee served one for 105 days. */
+.station.stale { opacity: 0.5; }
+.station.stale .station-temp { color: var(--fg-2); }
+.station-age {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--warn);
+  letter-spacing: 0.3px;
+}
 
 /* ─── CARD HEADER (used by hourly, 7-day, etc.) ──────────── */
 .card-header {
@@ -3563,11 +3574,53 @@ function renderStation(prefix, vals){
     if(we) we.textContent = w.toFixed(1);
   }
 }
+/* How old a station reading may get before the chip stops presenting it
+   as current. The bridge applies the same 6 h rule server-side (see
+   MAX_MEASUREMENT_AGE in scripts/fetch_kurevere.py); this is the second
+   line of defence, for when the bridge itself is the thing that froze. */
+var STATION_STALE_AFTER_MIN = 6 * 60;
+
+/* Dim a station chip and label how old its reading is. ageMin === null
+   means fresh — the chip is restored to normal. Appends its own element
+   rather than rewriting .station-sub, which would destroy the value
+   spans that renderStation() writes into. */
+function markStationStale(prefix, ageMin){
+  var block = byId(prefix + '-block');
+  if(!block) return;
+  var tag = block.querySelector('.station-age');
+  if(ageMin === null){
+    block.classList.remove('stale');
+    if(tag && tag.parentNode) tag.parentNode.removeChild(tag);
+    return;
+  }
+  block.classList.add('stale');
+  if(!tag){
+    tag = document.createElement('div');
+    tag.className = 'station-age mono';
+    block.appendChild(tag);
+  }
+  tag.textContent = ageMin < 60    ? Math.round(ageMin) + ' min vana'
+                  : ageMin < 1440  ? Math.round(ageMin / 60) + ' t vana'
+                                   : Math.round(ageMin / 1440) + ' p vana';
+}
+
 function renderKurevere(data){
   try{
     var feat = data && data.features && data.features[0];
     if(!feat || !feat.attributes) return;
     var a = feat.attributes;
+    /* measurement_time is epoch ms UTC straight from the ArcGIS layer, so
+       it survives the bridge unchanged and works on the direct API too.
+       Fall back to the bridge's own age_minutes / stale flag. */
+    var ageMin = null;
+    if(typeof a.measurement_time === 'number'){
+      ageMin = (Date.now() - a.measurement_time) / 60000;
+    }else if(typeof data.age_minutes === 'number'){
+      ageMin = data.age_minutes;
+    }
+    var isStale = ageMin !== null ? ageMin > STATION_STALE_AFTER_MIN
+                                  : data.stale === true;
+    markStationStale('kv', isStale ? (ageMin === null ? 1e9 : ageMin) : null);
     // Confirmed fields from API: air_temp, precipitation_type (not intensity),
     // wind_speed and wind_dir may be named differently — try both variants
     var windVal = a.wind_speed !== undefined ? a.wind_speed

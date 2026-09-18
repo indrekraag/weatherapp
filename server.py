@@ -9,7 +9,7 @@ non-public origins.
 
 Routes:
   /                       → index.html  (or any static file)
-  /api/kurevere           → tarktee.mnt.ee road weather station JSON
+  /api/kurevere           → tarktee road weather station JSON
   /api/emhi               → raw.githubusercontent.com/.../emhi.json
 
 Run from /Users/indrekraag/wa1:
@@ -26,8 +26,11 @@ import sys
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
 
+# NOTE: must stay in sync with scripts/fetch_kurevere.py. The `tram/`
+# folder is the live one — the root-level road_weather_stations service is
+# a frozen 2026-06-04 snapshot that still answers 200. See that file.
 KUREVERE_URL = (
-    "https://tarktee.transpordiamet.ee/tarktee/rest/services/road_weather_stations/"
+    "https://tarktee.transpordiamet.ee/tarktee/rest/services/tram/road_weather_stations/"
     "MapServer/0/query?where=site_name=%27Kurevere%27&outFields=*&f=json"
 )
 EMHI_URL = "https://raw.githubusercontent.com/indrekraag/weatherapp2/data/emhi.json"
