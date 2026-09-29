@@ -2495,9 +2495,16 @@ body {
 
   /* 7-DAY strip — sits in the RIGHT column only (above the map), so
    * the left sidebar can stretch to the very top of the viewport. */
+  /* 148px exactly, pinned. The map's top edge is this card's bottom plus
+     whole pixels, so a fractional height here puts the map on a fractional
+     pixel — and the Esri tile rows with it, which drew a 1px light seam
+     across the whole satellite map (at 148.281px, from three 16.1px text
+     lines per tile). The tile lines below are whole pixels too, so the
+     contents fill the 148 exactly rather than being cut or padded by it. */
   .seven-day-card {
     grid-column: 2;
     grid-row: 2;
+    height: 148px;
     padding: 8px 14px;
     flex-shrink: 0;
   }
@@ -2521,7 +2528,7 @@ body {
     gap: 1px;
     border-radius: 12px;
   }
-  .seven-day-card .day-name { font-size: var(--t-sm); letter-spacing: 0; line-height: 1.15; }
+  .seven-day-card .day-name { font-size: var(--t-sm); letter-spacing: 0; line-height: 16px; }
   /* 26px, not the inline 28px: the last two pixels of the card's height. */
   .seven-day-card .day-ico  { margin: 0; width: 26px !important; height: 26px !important; }
   .seven-day-card .day-temps {
@@ -2537,7 +2544,7 @@ body {
   .seven-day-card .day-high { font-size: var(--t-lg); line-height: 1.1; }
   .seven-day-card .day-low  { font-size: var(--t-sm); }
   .seven-day-card .day-rain,
-  .seven-day-card .day-wind { font-size: var(--t-sm); line-height: 1.15; margin-top: 0; }
+  .seven-day-card .day-wind { font-size: var(--t-sm); line-height: 16px; margin-top: 0; }
 
   /* RIGHT COLUMN: radar card fills the stack above the price card */
   #radar-card {
