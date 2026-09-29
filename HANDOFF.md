@@ -1,6 +1,6 @@
 # Madise iPad weather kiosk — session handoff
 
-Last updated: 2026-09-18
+Last updated: 2026-09-29
 
 ## What this project is
 
@@ -15,6 +15,119 @@ but rearranges the layout around a big always-on radar map.
   as the stylistic reference and as the upstream for the EMHI station
   bridge
 - **Local path**: `/Users/indrekraag/wa1/`
+
+## ▶ Latest session (2026-09-26 → 29) — design audit, P1+P2 fixes (v1.3.0)
+
+### If something is broken or looks off: undo
+
+Everything below is in 18 commits after the git tag **`pre-audit-fixes`**
+(= `bc22574`, the kiosk as it was on 2026-09-19).
+
+- **Undo all of it** — one command, tested (index.html comes back
+  byte-identical to the tag; the service worker removes itself ~10 s after
+  the iPad reloads):
+  ```bash
+  cd ~/wa1 && sh scripts/undo-audit-fixes.sh
+  ```
+  The hero bar then reads `v1.2.0 · 19.09 02:12` again — that is how you
+  see on the iPad that the rollback landed. Redo later with
+  `git revert <the undo commit> && git push`.
+- **Undo one part** — the commits per area are listed below; `git revert
+  <hash>` works for most, but the later typography/repair commits touch
+  the same lines, so reverting an early commit alone can conflict. Easiest:
+  ask Claude "undo the radar changes from the audit" and let it resolve it.
+
+### How it was done
+
+`/impeccable critique` + `/impeccable audit` (the same Impeccable plugin as
+Modcranebuilder), plus a rendered-measurement pass (font sizes → physical
+legibility distance on the iPad Air 2, contrast, touch targets), a
+data-honesty pass and forced states (night, −12 °C, storm, offline, price
+extremes, rotation). Every finding went through an adversarial verifier:
+105 findings, 0 refuted. Scores before the fixes: **critique 20/40,
+audit 9/20**. Snapshot: `.impeccable/critique/2026-09-26T15-18-22Z__index-html.md`
+(untracked). The owner chose: wrong data first, reading distance ~1 m (by
+the door), map keeps its size, do all P1 then P2.
+
+### What changed (by commit)
+
+| Area | Commits | What |
+|---|---|---|
+| Calculations | `864bcca` `b90fe06` `cd70a1f` | **Sun times were dated 24 h early from ~23 Sep to ~21 Mar** (equation-of-time wrap in `calcSunTimes`): no sun disc, arc drawn as "past", day treated as night. Hero rain was a **15-min sum shown as mm/h** (4× low) → `currentPrecipRate()`. **"Saju alguseni" was an hour late** (hourly precipitation is the sum over the *preceding* hour) and ignored drizzle; one shared `RAIN_MIN_MM`. Pressure trend from hourly `surface_pressure` over 3 h (was a permanent default "↗ stabiilne" — the history was in memory and the hourly reload wiped it). Hero icon: night variants, port of wa2's `skyIconSVG` guard, one day/night answer for text + icon (`heroIsDay`, `paintHeroSky`). Condition names snow / freezing rain / thunder. |
+| Honesty | `27bfc1c` `32e4af1` `7c1e1ed` `6c30470` | No more fake placeholder weather ("14° Pilves selgimistega") when Open-Meteo fails — "—" and an explicit no-data state; cache kept 24 h but shown with its age. **Data age is visible**: `ilm HH:MM` in the hero bar (amber past 45 min), age tags on station chips (EMHI + Kurevere). Kurevere retries no longer multiply (was 1,913 requests / 50 min in an outage) and an error no longer destroys the chip's spans (old open item 0b). Hourly reload only when the site is reachable, plus **`sw.js`** — a network-first app-shell worker (page only, never data), https only, so an offline reload shows the last page instead of Safari's error screen. Empty cards keep their size. 7-day strip drops days that are over. |
+| Warnings + road | `a89b1ae` `1a6e7ac` | **Warnings now reach the kiosk**: a banner over the top of the map, only while one is active (costs no layout). One CAP source (the bridge's MeteoAlarm); the direct `hoiatus.php` path was removed — it returns a non-CAP XML the parser could never read. Own alerts fixed (thunder / heavy rain / gusts each register). **Kurevere chip shows road state** (`tee +3° märg`, tarktee's own labels; ICE/FROST/COLD_RAIN go up on the banner). Old open item 0a done. |
+| Radar | `68d528b` `b660b02` `ac7ec9e` | One layer per frame switched by opacity (was recreating a tile layer every 500 ms → RainViewer 429 storms that showed "no rain" while the status said OK); back-off with an honest status; legend generated from the real colour scheme (the green "Mõõdukas" never existed on the tiles); holds ~3 s on the newest frame, label `nüüd` / `−40 min`; returns to the preset 60 s after a stray pan; MAP base switched from CARTO (now an "API KEY REQUIRED" watermark) to Esri light grey; autoplay rests at night / hidden / reduced motion; presets `50 KM · 200 KM · EE` match what they show; controls no longer overlap; 32 px hit areas. |
+| Readability + colour | `20809b9` `6e16144` `8de4124` `6506f52` | Sized for ~1 m: 14 px floor (12 px only for chart ticks/units), 28 px clock, bigger hero, one shared hour axis for the four 24h charts. `--cold` is a real blue (was the same amber as `--warm`/`--warn`/`--accent`); ordinary temperatures white, ≤0 °C blue, ≥25 °C amber (`tempTone()`). Hero Sadu tile says `vihm ~kl 19` when rain is near. ⟲ now needs **two taps** ("Kinnita?"), ↻/⟲ are 44 px. Contrast failures fixed. The seven `backdrop-filter` layers removed (≈0.2% visual effect, real GPU cost on an A8X). 7-day card is a whole-pixel 148 px (a fractional height put a 1 px seam across the satellite tiles). |
+| Rotation, price, night | `c686d90` | Rotating the iPad no longer half-breaks the kiosk (matchMedia listener, init/teardown). Price card: negative prices drawn below zero, cheapest hour tagged (`odavaim`), midnight divider + `homme`, `Elering · HH:MM` age, "homne hind ~14:00" before publication, `Hetkel … tunni keskm.` (the market settles per 15 min; the bridge only keeps hourly). **Night dim** between sunset+1 h and sunrise−30 min (touch lifts it for 60 s). Hidden cards (pollen, aurora, dead NOAA Bz) no longer polled on the kiosk; ↻ also refreshes prices + radar. |
+| Follow-ups | `71ca4f4` | Rain start more than 6 h out reads `Sadu: neljapäeval ~kl 13` instead of `~45 h 34 min`; old radar frames in hours; the map's wind arrow no longer waits up to 5 min after a reload (script-order race). |
+| Undo tool | `8cd5bfa` | `scripts/undo-audit-fixes.sh` |
+
+Verified at 1024×768 after every group and again independently (two
+verifier agents + a repair pass): no overflow, all four column bottoms at
+762 px, map 606×395 and Leaflet in agreement, ES5-only JS, no Safari 15.4+
+CSS, phone fallback renders, no new console errors. **Not verified on the
+physical iPad** (only desktop Chrome was available) — the service worker
+and the scrubber thumb styling are the parts most worth a look there.
+
+### The data bridges now run on a real 15-min clock (VPS timer)
+
+GitHub throttled the `*/15` crons to every ~3–5 h (measured: station
+readings 3 h old, tomorrow's prices arriving 14:53 / 18:18 / 18:32). Now
+**root's crontab on the Hetzner VPS** (`root@77.42.127.225`) runs
+`/opt/wa-dispatch/dispatch.sh` every 15 min, which calls
+`workflow_dispatch` for this repo's `kurevere.yml` and wa2's `emhi.yml`
+(stations + warnings + prices). Token: fine-grained, Actions read/write on
+`weatherapp` + `weatherapp2` only, in `/opt/wa-dispatch/token` (created by
+the owner, never in a repo or chat). Log: `/var/log/wa-dispatch.log`
+(`kurevere=204 emhi+nps=204` per run; **401 = token expired** — regenerate
+and overwrite the file). Verified 2026-09-29 08:28 UTC. Stop it with
+`ssh root@77.42.127.225 'crontab -l | grep -v wa-dispatch | crontab -'`.
+Also written up in wa2's CLAUDE.md.
+
+### Judgement calls worth revisiting
+
+- `RAIN_MIN_MM = 0.2` (wa2 uses 0.5, chosen 2026-05-31). 0.2 is what makes
+  the hourly series and the 15-min current value agree on wet/dry; the
+  cost is that a lone 0.2 mm hour counts as rain for the countdown.
+- `currentSkyText` still says "Sajab" only from 2 mm/h while the tile says
+  "mõõdukas" from 0.5 — pre-existing, left alone.
+- Road state uses tarktee's own word "jäine" (not "jäide"); one-word edit in
+  `ROAD_STATUS_ET`. `grip_factor` does not exist on the tram layer (always
+  null) — only `road_status(_aggregate)` drives the ice logic.
+- The app's own gust alert uses EMHI's land criteria (15/23/30 m/s): expect
+  a yellow "Tugev tuul" on windy autumn days (~43 days/yr at Madise).
+- `EE` preset is now centred on Estonia, not Madise (so it really shows
+  Estonia).
+- New tunables: `WX_AGE_WARN_MIN` 45, `WX_AGE_DIM_MIN` 120,
+  `WX_CACHE_KEEP_MS` 24 h, `STATION_AGE_TAG_MIN` 90,
+  `STATION_STALE_AFTER_MIN` 360, `KV_RETRY_MS` 8 s/30 s/2 min,
+  `RAIN_SOON_H` 3, `RAIN_TILE_AHEAD_H` 6.
+
+### Still open from the audit (P3, not done)
+
+- Wording: `TÄNA · 24H` → "Järgmised 24 h"; "Öökülm" → "Öö min" unless ≤ +3°;
+  one date format (7-day still `30/09`); `mm` on 7-day rain; one sign
+  convention; station chips mix rate and amount under "mm".
+- Temperature bars from a moving baseline exaggerate (a line/area would be
+  honest); the rain row autoscales so a drizzle day looks wet.
+- Tile glyphs inconsistent (⌁ ◌ ◐, none on the pills).
+- Dead weight: 25 unused CSS classes (`.weather-*`), a 128 KB base64 icon
+  (~⅓ of the file), manifest says `portrait` / "Madise Ilmaradar", seven
+  old HTML copies in the repo root are publicly served, README is
+  boilerplate.
+- Moon times 6–8 min early (single-term lunar model).
+- `checkAlerts` still skips the current hour, and hourly gusts are also a
+  preceding-hour value, so the Puhangud row is shifted like rain was.
+- Hard refresh still wipes the weather cache, so ⟲ during an Open-Meteo
+  outage shows "Ilmaandmed puuduvad" without "viimati".
+- The orange sun-arc path can graze the wind label (labels avoid glyphs,
+  not arcs).
+- **wa2 has the same bugs** — checked 2026-09-29: the unwrapped `EoT` in
+  its `calcSunTimes`, `round1(cur.precipitation)` shown as mm/h, the
+  "14° Pilves selgimistega" placeholders, the CARTO light base (and almost
+  certainly the rain hour shift). Port when convenient.
+
+## Previous session (2026-09-19) — layout reclaim, build stamp
 
 ### Reclaiming the wasted bottom strip (2026-09-19)
 
@@ -304,6 +417,8 @@ Added an **"Elektri hind"** card in the right column **under the radar**.
   vanishes there
 - `syncRadarToForecast()` JS aligns the radar's bottom with the forecast
   card's bottom on init + resize so both columns end at the same line
+  *(2026-09-26 audit: it is effectively a no-op now — the grid itself
+  aligns the columns, and hero size does not affect the map height)*
 - iOS `100dvh` + `-webkit-fill-available` so the radar's bottom controls
   don't disappear behind Safari's URL bar
 - Tundub kui forecast row hidden via `.forecast-row-feels` class hook
@@ -344,8 +459,9 @@ Added an **"Elektri hind"** card in the right column **under the radar**.
 ### Data
 - Open-Meteo for weather / hourly / daily / pollen / aurora air quality
 - NOAA SWPC for Kp / Ovation / Bz
-- Tarktee ArcGIS REST for Kurevere — now via the GH Actions bridge
-  (see below); direct URL still used as a last-resort fallback
+- Tarktee ArcGIS REST for Kurevere — via the GH Actions bridge only
+  (see below; there is no direct-URL fallback in the code, whatever older
+  notes said)
 - EMHI bundle at `raw.githubusercontent.com/indrekraag/weatherapp2/data/
   emhi.json` (Lääne-Nigula 26124 + Haapsalu 26123 + CAP warnings)
 - Local astronomy: Meeus simplified for sun, Brown lunar leading-term
@@ -382,12 +498,17 @@ Added an **"Elektri hind"** card in the right column **under the radar**.
   weather / Kp the moment the iPad wakes from sleep — `setInterval`
   pauses on hidden tabs
 - Hard-refresh ⟲ in hero-bar clears localStorage + service-worker caches
+  and unregisters `sw.js` — **two taps** since 2026-09-29 (first tap shows
+  "Kinnita?", confirm within 3 s)
+- Hourly reload only when the page is reachable; `sw.js` (network-first,
+  page only) paints the last page if a reload happens offline
+- Night dim between sunset+1 h and sunrise−30 min; a touch lifts it for 60 s
 
 ## What's currently disabled / pending
 
 | | Status | Notes |
 |---|---|---|
-| Warning bar (`#warning-bar`) | **disabled on iPad** | CSS comment block in `index.html` next to the `display: none` override has the original styling for easy restore. `renderWarnings()` still runs. Disabled because the row pushed the left column past its vertical budget; needs a layout pass. |
+| Warning bar (`#warning-bar`) | **replaced 2026-09-29** | The row stays hidden on the iPad; warnings now show as a banner over the top of the radar map, only while one is active (see Latest session). |
 | PILV cloud overlay (RainViewer IR) | **removed** | RainViewer's `satellite.infrared` array comes back empty too often |
 | PILV cloud overlay (OpenWeatherMap) | **gated** | Button hidden until `window.OWM_KEY` is set in the `<script>` near the top of `<body>`. Get a free key from https://openweathermap.org/api and paste it. |
 | Lightning strikes | **not started** | Free CORS-friendly source TBD — Blitzortung WS needs proxying, NASA GIBS has no Europe IR, OWM requires a paid plan for strikes |
@@ -417,7 +538,12 @@ GH Action on `push: paths: [index.html]` that rewrites `APP_BUILT` and
 commits back with a marker in the message to break the trigger loop).
 
 To force the iPad to pick up a new build: the **⟲** button in the hero bar
-clears localStorage + service-worker caches in place.
+clears localStorage + service-worker caches in place (tap twice — the
+first tap asks "Kinnita?").
+
+`sw.js` sits next to `index.html` and must be deployed with it. It is
+network-first for the page only, so a push is picked up on the next load
+exactly as before; bump `SHELL_CACHE` in it only if its own logic changes.
 
 ## How to run locally
 
@@ -432,16 +558,29 @@ python3 server.py 8765          # custom server with /api/* proxies
 
 ## Files
 
-- `index.html` — single-file app (~5000 lines)
+- `index.html` — single-file app (~8500 lines since the 2026-09 audit)
+- `sw.js` — network-first app-shell service worker (page only; deploy with index.html)
 - `server.py` — dev-only Python proxy server
 - `scripts/fetch_kurevere.py` — GH Actions cron worker
-- `.github/workflows/kurevere.yml` — 15-min cron + push trigger
+- `scripts/undo-audit-fixes.sh` — one-command rollback to tag `pre-audit-fixes`
+- `.github/workflows/kurevere.yml` — nominal 15-min cron (GitHub runs it
+  every ~3–5 h) + `workflow_dispatch`, which the VPS timer calls every 15 min
 - `index_vana.html`, `indexv2..v5.html` — pre-unify iterations
   (archived, not loaded by the live page)
 - `HANDOFF.md` — this file
 - `README.md` — GitHub Pages publish instructions
 
 ## Open items / next steps
+
+**Status 2026-09-29:** the items below are kept as history. Fixed by the
+audit work (see Latest session): the hero icon/text contradiction, -2
+(night icon), -1b (pressure trend — note its claim that `surface_pressure`
+was already fetched was wrong), -1a for the hero + 24h card (not
+`checkAlerts`), 0a (road state), 0b (Kurevere spans), 1 (warnings — as a
+map banner), 6 (service worker), and the `code 1` night glyph from -1d.
+-1 (wa2 tram fix) was done 2026-09-18. -5 (port to wa2) is now a bigger
+job — see "Still open". Still open: -4/-3 (hidden on the kiosk), -1c,
+remaining -1d, 2–5.
 
 ### Found 2026-09-19 — hero icon contradicts the hero text
 
