@@ -127,6 +127,149 @@ Also written up in wa2's CLAUDE.md.
   "14° Pilves selgimistega" placeholders, the CARTO light base (and almost
   certainly the rain hour shift). Port when convenient.
 
+### Codex audit (2026-09-29) — found, NOT fixed yet
+
+An independent read-only audit of v1.3.0 by OpenAI Codex (gpt-5.5, reasoning
+xhigh), run like the Modcranebuilder one: on a clean clone (tracked files
+only), no network. A single pass ran out of context on the 8,500-line file,
+so it was split into four scoped runs (calculations and time; always-on
+robustness; map/warnings/price; security). They produced 24 distinct
+findings. **Every one was then reproduced** (Playwright with forced clocks,
+timezone Europe/Tallinn, rewritten feeds; node replicas; a year of real
+Madise ECMWF data for the frequency questions). **22 are real, 2 are not;
+none is P1 for this kiosk**. Codex rated 11 as P1, but most need a feed to
+send a shape it never sends today, or only happen between 00:00 and 05:00
+behind the night dim. Our rating comes first, Codex's is in brackets where
+it differs.
+
+Codex also checked these and found them sound: the sun-time fix, the rain
+hour shift, the 7-day day-dropping, the service worker (network-first, page
+only), timer and listener lifecycles, and escaping (warning and station text
+is written with `textContent`, never `innerHTML`).
+
+- [ ] **P2 [Codex P2] · One malformed warnings entry can stop the kiosk
+  refreshing.** `renderWarnings` (index.html:5541) reads `w.expires` on
+  every entry. A `null` in `warnings[]` throws, and the bundle has already
+  been cached. After the next reload, `hydrateFromCache()` (6774) calls
+  `renderWarnings` without the try/catch every other renderer has. That
+  aborts the first `<script>`: no fetches, no intervals, no hourly reload,
+  until someone taps ↻ or ⟲. The bridge only ever writes dicts, so this is
+  unlikely, but it is the one path found that freezes the kiosk. Fix: coerce
+  `warnings` to an array of objects, and wrap the call like the others.
+- [ ] **P2 [P1] · Leaflet CSS/JS load from cdnjs without SRI** (index.html:13,
+  6883). A tampered response was shown to fully control the screen and
+  localStorage, and all `*.github.io` projects share one origin. Fix: add
+  `crossorigin="anonymous"` and, for 1.9.4, CSS
+  `integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="`
+  and JS
+  `integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=="`
+  (computed from cdnjs 2026-09-29), or vendor Leaflet. Check wa2 for the same.
+- [ ] **P2 [P1] · Open-Meteo `null`s become a fresh "0°" and overwrite the
+  good cache.** Reproduced: `round1(null)` = 0 gives "0°", "0.0 m/s" and
+  "kuiv" under a fresh `ilm HH:MM`, and the payload is cached before
+  validation, so it survives a reload. Missing keys give NaN. Nulls were only
+  ever seen for `uv_index` (the forced `ecmwf_ifs` model), but a fabricated
+  0° in winter would be believed. Fix: validate required fields before
+  `saveCache`, and print "—" for null secondary fields.
+- [ ] **P2 [P1] · "Warnings unknown" looks the same as "no warnings".** A
+  stale, failing or warnings-less bundle shows no banner. The wa2 bridge
+  (`fetch_emhi.py:223-236`) turns a MeteoAlarm failure into `warnings: []`
+  under a fresh `fetched_at`, so the kiosk can't tell the difference.
+  Warnings are common here (58 of the last 100 bundles had one), so the
+  first silent failure will probably fall on a warning day. Fix: bridge
+  emits `warnings_ok: false` on failure; kiosk shows a grey "Hoiatused
+  teadmata · HH:MM" strip when that is false or the bundle is > ~90 min old.
+- [ ] **P2 (found while verifying) · A station row with a fresh timestamp but
+  a null value** keeps the previous value on screen and removes its age
+  tag. `renderStation` skips nulls, but `setStationAge` stamps the whole chip
+  fresh. This can happen in production (EMHI stations do report missing
+  values). Fix: show "—" for null values, or don't refresh the age unless the
+  temperature is present.
+- [ ] **P3 [P1] · Pressure trend 00:00–03:00 uses a mostly-future window**
+  (`pressureTendency3h` slides to 00→03 because the request has no past
+  hours). Over a real year, the word differed from the true past-3 h trend
+  on 21% of nights at 00:30, and was never ↑/↓ reversed. Fix: return "—"
+  until 03:00, or `&past_hours=3&forecast_hours=216` (past_hours alone
+  returns 16 days).
+- [ ] **P3 [P1] · "Öökülm" before 05:00 shows the next night** (`tonightMinTemp`
+  always ends at 09:00 tomorrow). At 01:00 it differs from this night's
+  minimum on 55% of days, and showed a red frost on 16 days a year when this
+  night stayed above 0. Always on the cold side, and during the night dim.
+  Fix: before 05:00 end the window at 09:00 today.
+- [ ] **P3 [P1] · Price "Hetkel" during the autumn DST fold**
+  (03:00–03:59 EET on the last Sunday of October) shows the expired first
+  03:00 and tags it "odavaim". Fix: `nowHourMs = Math.floor(Date.now()/3600000)*3600000`.
+- [ ] **P3 [P1] · A missing same-day price hour reads "homne hind tulekul"**
+  and "odavaim" is taken from the truncated chart. Needs Elering to drop an
+  hour mid-day (essentially never). Fix: remember the gap and say
+  "hinnad puuduvad alates HH:MM".
+- [ ] **P3 [P1] · `nps.json` with `eur_mwh: null` shows "Hetkel 0.0" in green**
+  (NaN if non-numeric). The wa2 bridge can't produce it today. Fix: only
+  index finite numbers (one line at 5764).
+- [ ] **P3 [P1] · Future station timestamps look fresh** (age clamped to 0;
+  the Kurevere bridge also gives `stale: false` at −180 min). Needs an
+  upstream clock bug. Fix: treat > 15 min in the future as unknown/stale,
+  in the client and the bridge.
+- [ ] **P3 [P1] · Kurevere `features:[{}]`** clears the status line and
+  overwrites the cache. The age tag still ages correctly, and neither real
+  path emits this shape. A related case on the local raw proxy:
+  `attributes:{}` with no stale flag strips an existing age tag. Fix:
+  require `attributes`; call `setStationAge('kv', obsMs, obsMs === null)`.
+- [ ] **P3 [P1] · Upcoming warnings are shown, which is intended** (advance
+  notice of tonight's fog is the point), but they look identical to ones in
+  effect and aren't sorted after them. Fix: in-effect first within a level,
+  and an outlined style for upcoming. Also: unknown CAP kinds (fog, coastal,
+  snow-ice) sort like thunder (`MAP_WARN_KIND_RANK[null] || 0`) [Codex P3],
+  so "Udu tonight" beat "Tugev tuul now" in a test.
+- [ ] **P3 [P2] · DST, the real version:** Open-Meteo applies one
+  `utc_offset_seconds` (the one at request time) to the whole series, so a
+  payload fetched before a switch puts every later hour 1 h off
+  ("Sadu: homme ~kl 10" for rain at 09). It heals on the first refetch after
+  the switch. Codex's missing/repeated-hour mechanism never arrives from the
+  API. Fix: parse with the payload's `utc_offset_seconds`, and label chart
+  bars from their timestamps, not `startHour + i`.
+- [ ] **P3 [P2] · Radar: scrubbing before the newest tiles load** leaves an
+  empty map under an "OK" status until the next scrub / idle return. Fix:
+  one line in `radarAddLayer` to show the scrubbed frame once its layer
+  exists.
+- [ ] **P3 [P2] · EMHI bundle missing one station** keeps that chip's old
+  value with no status (the age tag still runs correctly). Fix: a
+  "jaam puudub" status.
+- [ ] **P3 [P2] · Kurevere ICE with no time** raises "Libe tee" as fresh, but
+  only via the local raw proxy; the bridge marks it stale.
+- [ ] **P3 · Sun arc and moon ring run through the wind label**: common
+  (382 of 621 tested wind/sun combinations), and the arcs are painted over
+  the text. Fix: append label `<text>` after the arcs so the halo masks
+  them; ideally step the label off the rings.
+- [ ] **P3 [P2] · `kurevere.yml`**: `contents: write`, actions on mutable
+  tags, force-push. No injection path found. Hardening: pin `checkout` to a
+  SHA with `persist-credentials: false`, drop `setup-python` (stdlib only).
+- [ ] **P3 [P2] · `server.py` serves `.git`, `.impeccable/` and directory
+  listings to the LAN** (dev only; nothing secret, the repo is public). Fix:
+  404 dot-paths and listings.
+- [ ] **P3 · `:has()` (Safari 15.4+)** at 1219/1220/1321, only in cards hidden
+  on the kiosk. The iPad can run 15.8, which supports it. Also an unclosed
+  `<span class="dl-countdown">` at 3275 (same hidden card).
+- [ ] **P3 · Archived `indexv2–5.html` / `index_vana.html` are public**, and
+  `sw.js` caches any page visited in scope (never served for the canonical
+  URL; checked). Fix: `git rm` the archives.
+- [ ] **P3 (found while verifying)** — the EMHI cache max age (6 h) is shorter
+  than a typical warning (today's fog: 15 h), so an outage > 6 h drops a
+  still-valid warning at the next reload; "homme 07:00 – homme 18:00"
+  repeats "homme".
+- **Not real:** rounding before the rain threshold (Open-Meteo steps are
+  0.1 mm, so the flip band never occurs); "not ES5" `padStart` /
+  `NodeList.forEach` (the syntax is strict ES5; these APIs are Safari 10+).
+  HANDOFF's "ES5-only" should read "ES5 syntax; a few Safari ≥ 10.1 APIs".
+- **Worth checking on the iPad:** the kiosk's saved URL must end in `/`
+  (`…/weatherapp/`). Without it the page is outside the service worker's
+  scope, and the offline fallback does nothing.
+- Test gaps Codex named: schema tests for null or missing numbers in
+  Open-Meteo / `nps.json`, past/future station timestamps, a DOM test that
+  injects HTML through CAP/road strings (passes today), and a deploy check
+  that fails on scripts without SRI. Verification scripts and screenshots
+  were in the session scratchpad (not kept).
+
 ## Previous session (2026-09-19) — layout reclaim, build stamp
 
 ### Reclaiming the wasted bottom strip (2026-09-19)
