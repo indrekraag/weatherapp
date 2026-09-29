@@ -66,8 +66,9 @@
 
   /* Type scale. The kiosk media query sizes every text from these; the
    * phone fallback keeps its own older sizes.
-   *   --t-xs  12  uppercase labels, chart ticks, units, the build stamp
-   *   --t-sm  14  captions, sub-lines, secondary values (the kiosk floor)
+   *   --t-xs  12  chart axis ticks and units — nothing else
+   *   --t-sm  14  labels, card titles, captions, sub-lines, secondary
+   *               values, the build stamp (the kiosk floor)
    *   --t-md  16  the condition line
    *   --t-lg  20  tile, pill, station and 7-day values
    *   --t-xl  28  the clock and the current electricity price
@@ -361,7 +362,7 @@ body {
    the live date/time it sits beside: it is a version marker, not a
    reading, and must never be misread as the current time. 0.50 is as dim
    as it can go and still pass AA contrast (5:1 on the card; 0.34 gave
-   3.1:1). Sized in `em` on the phone; the kiosk sets it to --t-xs. */
+   3.1:1). Sized in `em` on the phone; the kiosk sets it to --t-sm. */
 .hero-bar-date .build-stamp {
   margin-left: 2px;
   font-size: 0.8em;
@@ -2242,7 +2243,7 @@ body {
      9 → 12px, the value tags on the peak and the current bar to 14px, and
      renderNps() thins the Y labels and adds headroom to suit. */
   #price-card .card-header { margin-bottom: 0; flex-shrink: 0; align-items: center; flex-wrap: nowrap; }
-  #price-card .card-header h2 { font-size: var(--t-xs); }
+  #price-card .card-header h2 { font-size: var(--t-sm); }
   #price-card .price-now-wrap { gap: 5px; }
   #price-card .price-now { font-size: var(--t-xl); }
   #price-card .price-now-label { font-size: var(--t-sm); margin-right: 0; }
@@ -2337,7 +2338,8 @@ body {
 
   /* TYPE ON THE KIOSK — read from the door, about a metre away. Every size
      below comes from the --t-* scale in the token block: 14px floor for
-     text, 12px only for uppercase labels, chart ticks and units, 20px for
+     text, labels and card titles included, 12px only for chart axis ticks
+     and units (and the map's third-party attribution), 20px for
      the values in tiles, pills, chips and the 7-day strip, 28px for the
      clock, 80px for the temperature. Almost everything here used to be
      8–10.5px, legible to about arm's length.
@@ -2389,7 +2391,16 @@ body {
   }
   .hero-bar-date .hero-bar-meta > span { white-space: nowrap; }
   .hero-bar-date .wx-age { font-size: var(--t-sm); }
-  .hero-bar-date .build-stamp { font-size: var(--t-xs); margin-left: 0; }
+  /* At the floor like the age beside it, and in the same sans with tabular
+     figures: 124px against 173px in mono at 14px, so an amber
+     'ilm 28.09 11:50 · 23 t vana' and the stamp still share one line. */
+  .hero-bar-date .build-stamp {
+    font-family: -apple-system, "SF Pro Text", sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-sm);
+    letter-spacing: 0;
+    margin-left: 0;
+  }
   /* ↻ and ⟲: 30px boxes 36px apart (22px boxes 6px apart before), each
      with a 44 × 44 hit area. The ::after belongs to the button, so a tap
      anywhere on it is a tap on the button, while the box stays small beside
@@ -2445,14 +2456,29 @@ body {
   .stations { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hero-meta { gap: 5px; }
   .pill { padding: 5px 8px 6px; gap: 1px; }
-  .pill .pill-label { font-size: var(--t-xs); letter-spacing: 0.3px; }
+  /* Pill and tile labels at the floor in sentence case, like the station
+     names below them. In 14px capitals 'KASTEPUNKT' ran 10px out of its
+     pill and 'TUNDUB KUI' wrapped to two lines. */
+  .pill .pill-label {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+  }
   .pill .pill-value { font-size: var(--t-lg); line-height: 1.1; }
   .hero-readings { gap: 4px; margin-top: 0; }
   .hero-readings .metric { padding: 5px 6px 6px; min-height: 0; gap: 1px; }
   .hero-readings .metric-value { font-size: var(--t-lg); line-height: 1.1; }
   .hero-readings .metric-value .unit { font-size: var(--t-xs); }
-  .hero-readings .metric-head { font-size: var(--t-xs); letter-spacing: 0.4px; gap: 4px; }
-  .hero-readings .metric-icon { font-size: var(--t-xs); }
+  .hero-readings .metric-head {
+    font-size: var(--t-sm);
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+    gap: 4px;
+  }
+  .hero-readings .metric-icon { font-size: var(--t-sm); }
   .hero-readings .metric-sub { font-size: var(--t-sm); margin-top: 0; white-space: nowrap; }
   /* Wind tile: the arrow moves from a column of its own to the top-right
      corner, beside the TUUL label, so the value and 'puhangud 11.8' get the
@@ -2509,7 +2535,9 @@ body {
     flex-shrink: 0;
   }
   .seven-day-card .card-header { margin-bottom: 5px; }
-  .seven-day-card .card-header h2 { font-size: var(--t-xs); }
+  /* 15px line at 14px type: the header stays 15px tall, as at 12px, and
+     the card keeps its whole-pixel 148. */
+  .seven-day-card .card-header h2 { font-size: var(--t-sm); line-height: 15px; }
   .seven-day-card .daily {
     padding: 0;
     margin: 0;
@@ -2629,7 +2657,7 @@ body {
    * only place a radar failure was reported) and over the lower half of
    * the scrubber. Everything is in the flow now; nothing overlaps. */
   .radar-timeline { margin-top: 3px; gap: 10px; flex-shrink: 0; }
-  .radar-ctrl-btn { width: 32px; height: 32px; font-size: 13px; }
+  .radar-ctrl-btn { width: 32px; height: 32px; font-size: var(--t-sm); }
   .radar-time-label {
     font-family: -apple-system, "SF Pro Text", sans-serif;
     font-variant-numeric: tabular-nums;
@@ -2771,7 +2799,7 @@ body {
   .forecast-card .forecast-row-feels { display: none !important; }
   .forecast-card .metric-spark-legend { display: none !important; }
   .forecast-card .card-header { margin-bottom: 3px; }
-  .forecast-card .card-header h2 { font-size: var(--t-xs); }
+  .forecast-card .card-header h2 { font-size: var(--t-sm); }
   /* 'Saju alguseni: ~2 h 25 min' — sentence case at the floor, not 9px caps. */
   .forecast-card .card-header .meta {
     font-size: var(--t-sm);
@@ -2781,8 +2809,16 @@ body {
   }
   .forecast-card .forecast-row { padding-bottom: 3px; margin-bottom: 3px; gap: 1px; }
   .forecast-card .forecast-row-head { min-height: 18px; gap: 6px; }
-  .forecast-card .forecast-row-label { font-size: var(--t-xs); letter-spacing: 0.8px; }
-  .forecast-card .forecast-row-sub { font-size: var(--t-sm); }
+  .forecast-card .forecast-row-label { font-size: var(--t-sm); letter-spacing: 0.8px; }
+  /* Captions are sized to fit their row (see the gust row in renderWeather);
+     should one ever still be too long it ends in '…' rather than running
+     past the card's edge. */
+  .forecast-card .forecast-row-sub {
+    font-size: var(--t-sm);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* TUUL's current reading and arrow are the hero's Tuul tile over again;
      at 14px they no longer fit beside 'min 0.1 · max 4.5 m/s · kl 14'. */
   .forecast-card .forecast-row-val { display: none; }
@@ -2836,13 +2872,14 @@ body {
   .forecast-card .precip-type-row { height: 12px; margin-top: 1px; }
   .forecast-card .precip-type-icon { width: 10px; height: 10px; }
   /* '%' / 'mm' instead of TÕENÄOSUS / HULK (the toggle had to fit beside
-     a 14px caption), at 12px. The visible pill stays 18px tall; the ::after
+     a 14px caption), at the 14px floor on a 14px line. The visible pill
+     stays 18px tall; the ::after
      reaches 7px above it and 13px below for a 38px hit area — the buttons
      were 14px tall. Lopsided on purpose: above is the row gap and then the
      temperature bars, below only the icon row, which takes no taps. */
   .forecast-card .rain-mode-btn {
     position: relative;
-    font-size: var(--t-xs);
+    font-size: var(--t-sm);
     line-height: 14px;
     letter-spacing: 0.3px;
     padding: 2px 10px;
@@ -2866,7 +2903,7 @@ body {
   .forecast-card .forecast-row-head .rain-mode-toggle { position: relative; z-index: 3; }
 
   .card-header { margin-bottom: 8px; }
-  .card-header h2 { font-size: var(--t-xs); letter-spacing: 1.1px; }
+  .card-header h2 { font-size: var(--t-sm); letter-spacing: 1.1px; }
   .card-header .meta { font-size: var(--t-sm); }
 
   /* The top-of-map forecast overlay used in earlier iterations has been
@@ -4489,8 +4526,12 @@ function renderWeather(data, savedAt){
       if(next24Wind.length) renderSpark('spark-wind', next24Wind,
         {unit:'m/s', directions: next24WindDir,
          colorFn: windBarColor, legend: WIND_LEGEND});
+      // Gusts caption the peak only, 'max 21.4 m/s · kl 18'. With the
+      // minimum in front it ran 13px past the card beside PUHANGUD once both
+      // figures reached two digits, and a gust minimum answers no one's
+      // question — the Tuul row above keeps the range of the wind itself.
       if(next24Gusts && next24Gusts.length) renderSpark('spark-gusts', next24Gusts,
-        {unit:'m/s', colorFn: windBarColor, subId: 'gust-spark-sub'});
+        {unit:'m/s', colorFn: windBarColor, subId: 'gust-spark-sub', peakOnly: true});
       if(next24Temp.length) renderSpark('spark-temp', next24Temp,
         {unit:'°C', colorFn: tempBarColor, legend: TEMP_LEGEND,
          relativeBase: true, subId: 'temp-spark-sub'});
@@ -6623,8 +6664,8 @@ function renderSpark(elId, data, opts){
       else peakValStr = dataMax.toFixed(1);
       var timeStr = 'kl ' + String(peakHour).padStart(2,'0');
       // Wind (m/s): prepend min so user sees the full range
-      // "min 2.1 · max 9.3 m/s · kl 14"
-      var prefix = (unit === 'm/s')
+      // "min 2.1 · max 9.3 m/s · kl 14" — unless opts.peakOnly (gusts).
+      var prefix = (unit === 'm/s' && !opts.peakOnly)
         ? 'min ' + dataMin.toFixed(1) + ' · '
         : '';
       sub.textContent = peakIdx === 0
