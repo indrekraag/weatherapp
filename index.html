@@ -2585,7 +2585,10 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
+    /* Not hidden: the chips' hit areas reach 3px past the card's bottom
+       edge (see .radar-foot .zoom-btn::after). Everything else in the card
+       fits inside it — the map clips its own tiles — so nothing else shows. */
+    overflow: visible;
   }
   /* "VIHMARADAR" title hidden on the kiosk. On a wall display the map is
      self-evident — nobody needs a label to recognise a radar — and the
@@ -2781,6 +2784,32 @@ body {
 
   /* (The zoom-preset + base-map chips are styled outside the query, with
      .radar-foot — the same rules serve the kiosk and a portrait iPad.) */
+
+  /* TOUCH, under the map. The chips are 23px tall, and between the
+     scrubber's 32px box above (it ends at y 611) and the card's edge there
+     are only 29px — so each chip's hit area is a ::after from the
+     scrubber's edge down into the empty 8px gap under the card: 1.5px
+     above the chip (half a pixel short of the scrubber), 7.5px below, 32px
+     in all, without taking a pixel from the scrubber or moving anything.
+     The sides meet in the 2px between chips. */
+  .radar-foot .zoom-btn { position: relative; }
+  .radar-foot .zoom-btn::after {
+    content: '';
+    position: absolute;
+    left: -1px; right: -1px;
+    top: -1.5px; bottom: -7.5px;
+  }
+  /* Leaflet's +/− are 30×30 and touch each other; a ::after takes each to
+     42×36 without moving it — 6px out at the sides and at its outer end. */
+  #radar-map .leaflet-control-zoom a { position: relative; }
+  #radar-map .leaflet-control-zoom a::after {
+    content: '';
+    position: absolute;
+    left: -6px; right: -6px;
+    top: 0; bottom: 0;
+  }
+  #radar-map .leaflet-control-zoom a.leaflet-control-zoom-in::after  { top: -6px; }
+  #radar-map .leaflet-control-zoom a.leaflet-control-zoom-out::after { bottom: -6px; }
 
   /* Forecast card sits in the left sidebar below the hero. Cards are
    * thinned out vertically so the whole card fits inside the sidebar
