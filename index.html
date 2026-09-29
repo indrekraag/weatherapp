@@ -831,11 +831,26 @@ body {
    display is that you trust it at a glance, so a fossil must not be able
    to pass for a current reading — tarktee served one for 105 days. */
 .station.stale { opacity: 0.5; }
-.station.stale .station-temp { color: var(--fg-2); }
+/* The value span carries renderStation()'s inline warm/cold colour, which
+   only !important can outrank — without it just the '°' went grey. */
+.station.stale .station-temp,
+.station.stale .station-temp > span { color: var(--fg-2) !important; }
+/* Sans at 500, not mono bold: in production the bridges make a 2–5 h old
+   reading the normal case, so this tag is on screen most of the time and
+   should read as a note, not an alarm. */
 .station-age {
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--warn);
+  letter-spacing: 0.3px;
+}
+/* Kurevere fetch trouble ('võrgu viga', 'HTTP 500'). Its own element, so
+   the value spans in .station-sub survive it — see setStationStatus(). */
+.station-status {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--fg-3);
   letter-spacing: 0.3px;
 }
 
@@ -2073,6 +2088,9 @@ body {
   .station-name { font-size: 9.5px; }
   .station-temp { font-size: 14px; }
   .station-sub { font-size: 8.5px; }
+  /* Age tag and fetch status are read from the door: kiosk 14px floor. */
+  .station-age,
+  .station-status { font-size: 14px; letter-spacing: 0; }
 
   /* 7-DAY strip — sits in the RIGHT column only (above the map), so
    * the left sidebar can stretch to the very top of the viewport. */
@@ -2960,6 +2978,7 @@ function updateWeatherAge(){
 
 function updateStaleIndicator(){
   updateWeatherAge();
+  refreshStationAges();
   if(!LAST_FETCH_MS) return;
   var el = byId('last-updated');
   if(!el) return;
@@ -4169,34 +4188,78 @@ function renderStation(prefix, vals){
     if(we) we.textContent = w.toFixed(1);
   }
 }
-/* How old a station reading may get before the chip stops presenting it
-   as current. The bridge applies the same 6 h rule server-side (see
-   MAX_MEASUREMENT_AGE in scripts/fetch_kurevere.py); this is the second
-   line of defence, for when the bridge itself is the thing that froze. */
+/* How old a station reading may get before the chip says so, and before it
+   stops presenting it as current. The data-branch bridges are 15-minute
+   crons that GitHub actually runs about every 4 h, so in production a 2–5 h
+   old reading is the normal case: past STATION_AGE_TAG_MIN the chip carries
+   its age, so 'earlier today' can't read as 'now'. Past STATION_STALE_AFTER_MIN
+   it is dimmed too — the same 6 h rule the Kurevere bridge applies
+   server-side (MAX_MEASUREMENT_AGE in scripts/fetch_kurevere.py); this is
+   the second line of defence, for when the bridge itself froze. */
+var STATION_AGE_TAG_MIN     = 90;
 var STATION_STALE_AFTER_MIN = 6 * 60;
 
-/* Dim a station chip and label how old its reading is. ageMin === null
-   means fresh — the chip is restored to normal. Appends its own element
-   rather than rewriting .station-sub, which would destroy the value
-   spans that renderStation() writes into. */
-function markStationStale(prefix, ageMin){
+/* Label how old a chip's reading is and dim it once it is a fossil.
+   ageMin === null means unknown or fresh enough — the chip is restored to
+   normal, unless forceStale (the bridge's own stale flag with no timestamp
+   to go by). Appends its own element rather than rewriting .station-sub,
+   which would destroy the value spans that renderStation() writes into. */
+function markStationStale(prefix, ageMin, forceStale){
   var block = byId(prefix + '-block');
   if(!block) return;
   var tag = block.querySelector('.station-age');
-  if(ageMin === null){
-    block.classList.remove('stale');
+  var tagged = ageMin !== null && ageMin > STATION_AGE_TAG_MIN;
+  var stale = !!forceStale || (ageMin !== null && ageMin > STATION_STALE_AFTER_MIN);
+  if(stale) block.classList.add('stale');
+  else block.classList.remove('stale');
+  if(!tagged && !stale){
     if(tag && tag.parentNode) tag.parentNode.removeChild(tag);
     return;
   }
-  block.classList.add('stale');
   if(!tag){
     tag = document.createElement('div');
-    tag.className = 'station-age mono';
-    block.appendChild(tag);
+    tag.className = 'station-age';
+    // Above the fetch-status line, if there is one.
+    block.insertBefore(tag, block.querySelector('.station-status'));
   }
-  tag.textContent = ageMin < 60    ? Math.round(ageMin) + ' min vana'
-                  : ageMin < 1440  ? Math.round(ageMin / 60) + ' t vana'
-                                   : Math.round(ageMin / 1440) + ' p vana';
+  tag.textContent = ageMin !== null ? ageText(ageMin) : 'vana';
+}
+
+/* Remember when a chip's reading was measured (epoch ms, or null if the
+   feed doesn't say) and label it now. The 30-s clock tick re-labels every
+   chip from here, so the age keeps counting while a feed is down instead
+   of freezing at whatever it was on the last successful fetch. */
+function setStationAge(prefix, obsMs, forceStale){
+  STATION_OBS[prefix] = { ms: obsMs, force: !!forceStale };
+  refreshStationAge(prefix);
+}
+function refreshStationAge(prefix){
+  var o = STATION_OBS[prefix];
+  if(!o) return;
+  markStationStale(prefix, o.ms === null ? null : Math.max(0, (Date.now() - o.ms) / 60000), o.force);
+}
+function refreshStationAges(){
+  for(var prefix in STATION_OBS){
+    if(STATION_OBS.hasOwnProperty(prefix)) refreshStationAge(prefix);
+  }
+}
+
+/* Show (msg) or clear (null) a chip's fetch-status line — a child element
+   of its own, for the same reason as the age tag. */
+function setStationStatus(prefix, msg){
+  var block = byId(prefix + '-block');
+  if(!block) return;
+  var el = block.querySelector('.station-status');
+  if(!msg){
+    if(el && el.parentNode) el.parentNode.removeChild(el);
+    return;
+  }
+  if(!el){
+    el = document.createElement('div');
+    el.className = 'station-status';
+    block.appendChild(el);
+  }
+  el.textContent = msg;
 }
 
 function renderKurevere(data){
@@ -4205,17 +4268,18 @@ function renderKurevere(data){
     if(!feat || !feat.attributes) return;
     var a = feat.attributes;
     /* measurement_time is epoch ms UTC straight from the ArcGIS layer, so
-       it survives the bridge unchanged and works on the direct API too.
-       Fall back to the bridge's own age_minutes / stale flag. */
-    var ageMin = null;
+       it survives the bridge unchanged and works on the local proxy too.
+       Fall back to the bridge's measured_at / age_minutes, and to its stale
+       flag only when there is no time at all to go by. */
+    var obsMs = null;
     if(typeof a.measurement_time === 'number'){
-      ageMin = (Date.now() - a.measurement_time) / 60000;
+      obsMs = a.measurement_time;
+    }else if(data.measured_at && !isNaN(Date.parse(data.measured_at))){
+      obsMs = Date.parse(data.measured_at);
     }else if(typeof data.age_minutes === 'number'){
-      ageMin = data.age_minutes;
+      obsMs = Date.now() - data.age_minutes * 60000;
     }
-    var isStale = ageMin !== null ? ageMin > STATION_STALE_AFTER_MIN
-                                  : data.stale === true;
-    markStationStale('kv', isStale ? (ageMin === null ? 1e9 : ageMin) : null);
+    setStationAge('kv', obsMs, obsMs === null && data.stale === true);
     // Confirmed fields from API: air_temp, precipitation_type (not intensity),
     // wind_speed and wind_dir may be named differently — try both variants
     var windVal = a.wind_speed !== undefined ? a.wind_speed
@@ -4237,6 +4301,11 @@ function renderEmhiStation(prefix, data, wmo){
     if(!s) return;
     renderStation(prefix, { temp: s.airtemperature, precip: s.precipitations,
                             wind: s.windspeed, windDir: s.winddirection });
+    // The bundle's observation_time is EMHI's own timestamp for the whole
+    // observations file — the only evidence of how old these readings are
+    // (fetched_at only says when the bridge ran). Same age rules as Kurevere.
+    var obsMs = data.observation_time ? Date.parse(data.observation_time) : NaN;
+    setStationAge(prefix, isNaN(obsMs) ? null : obsMs, false);
     if(prefix === 'hp' && typeof s.uvindex === 'number' && !isNaN(s.uvindex)){
       var uv = round1(s.uvindex);
       var info = uvLabel(uv);
@@ -4632,8 +4701,17 @@ function renderNps(data){
     if(byId('price-status')) byId('price-status').textContent = 's/kWh · käibemaksuga (' + NPS_VAT_PCT + '%) · Nord Pool / Elering';
   }catch(e){ console.warn('renderNps error', e); }
 }
+/* One request in flight and at most one retry pending. The old code queued
+   a fresh 8 s retry on every failure and every 5-min tick started another
+   chain, so chains piled up for as long as an outage lasted (1,913 requests
+   in 50 min, measured). Now a failure schedules a single retry, backing off
+   8 s → 30 s → 2 min; after that the 5-min interval is the retry. Any call
+   (interval, wake-up, ↻) replaces a pending retry rather than adding one. */
+var KV_RETRY_MS = [8000, 30000, 120000];
+var KV_FETCH = { inFlight: false, startedAt: 0, retryTimer: null, failures: 0 };
+
 function fetchKurevere(){
-  /* Routing, in preference order:
+  /* Routing:
    *   1. github.io build → the wa1 `data` branch bundle on
    *      raw.githubusercontent.com (populated server-side by the
    *      GH Actions cron in .github/workflows/kurevere.yml). The
@@ -4645,17 +4723,33 @@ function fetchKurevere(){
    *   2. Local dev (HTTP-on-LAN-IP) → /api/kurevere proxy served
    *      by server.py — same reason, plus avoids the upstream's
    *      sometimes-flaky CORS for non-public origins.
-   *   3. Fallback to the direct tarktee URL if both fail (still
-   *      useful on a Mac / iPhone / where direct CORS works). */
+   * There is no direct-tarktee fallback (an older comment here claimed
+   * one); a failure just retries the same URL. */
+  // A request older than 30 s is abandoned rather than trusted to report
+  // back — belt and braces, since the XHR itself times out at 12 s.
+  if(KV_FETCH.inFlight && Date.now() - KV_FETCH.startedAt < 30000) return;
+  if(KV_FETCH.retryTimer){ clearTimeout(KV_FETCH.retryTimer); KV_FETCH.retryTimer = null; }
+  KV_FETCH.inFlight = true;
+  KV_FETCH.startedAt = Date.now();
+
   var isGitHubPages = /\.github\.io$/i.test(location.hostname);
   var url = isGitHubPages
     ? 'https://raw.githubusercontent.com/indrekraag/weatherapp/data/kurevere.json'
     : '/api/kurevere';
-  var status = function(msg){
-    // Show fetch state inside the Kurevere chip so iPad failures are
-    // visible without the dev console.
-    var sub = document.querySelector('#kv-block .station-sub');
-    if(sub && msg) sub.textContent = msg;
+  var fail = function(msg){
+    KV_FETCH.inFlight = false;
+    KV_FETCH.failures++;
+    // Fetch state shows in the chip so iPad failures are visible without
+    // the dev console — but only once the first retry has failed too, so a
+    // one-off blip doesn't make the chip grow a line for 8 s.
+    if(KV_FETCH.failures >= 2) setStationStatus('kv', msg);
+    var delay = KV_RETRY_MS[KV_FETCH.failures - 1];
+    if(delay){
+      KV_FETCH.retryTimer = setTimeout(function(){
+        KV_FETCH.retryTimer = null;
+        fetchKurevere();
+      }, delay);
+    }
   };
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url, true);
@@ -4663,34 +4757,33 @@ function fetchKurevere(){
   xhr.onload = function(){
     if(xhr.status !== 200){
       console.warn('Kurevere HTTP', xhr.status);
-      status('HTTP ' + xhr.status);
-      // Retry once after 8 s if first attempt fails
-      setTimeout(fetchKurevere, 8000);
+      fail('HTTP ' + xhr.status);
       return;
     }
     try{
       var data = JSON.parse(xhr.responseText);
       if(!data.features || !data.features[0]){
         console.warn('Kurevere: no features returned');
-        status('no data');
+        fail('andmeid pole');
         return;
       }
+      KV_FETCH.inFlight = false;
+      KV_FETCH.failures = 0;
+      setStationStatus('kv', null);
       saveCache('wx.kurevere', data);
       renderKurevere(data);
     }catch(e){
       console.warn('Kurevere parse error', e);
-      status('parse error');
+      fail('vigane vastus');
     }
   };
   xhr.onerror = function(){
     console.warn('Kurevere network error');
-    status('võrgu viga');
-    setTimeout(fetchKurevere, 8000);
+    fail('võrgu viga');
   };
   xhr.ontimeout = function(){
     console.warn('Kurevere timeout');
-    status('aegus');
-    setTimeout(fetchKurevere, 8000);
+    fail('aegus');
   };
   xhr.send();
 }
