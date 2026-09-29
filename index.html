@@ -7016,27 +7016,67 @@ function drawOverlay(){
   var origin = latlngToPixel(CONFIG.lat, CONFIG.lng);
   var cx = origin.x, cy = origin.y;
 
-  // Anti-overlap: each text value is nudged radially outward from Madise
-  // until it clears every label already placed this frame — so sun and
-  // moon values never sit on top of each other when their bearings (or
-  // rise/set azimuths) coincide. Placement order = priority: wind, sun, moon.
+  // Labels stay inside the map, and below the warning strip when one is up.
+  var warnEl = document.getElementById('map-warning');
+  var topPad = (mapEl.classList.contains('has-warning') && warnEl) ? warnEl.offsetHeight : 0;
+  var B = { l: 4, r: W - 4, t: topPad + 4, b: H - 4 };
+
+  // Anti-overlap: each text value is nudged radially from Madise until it
+  // clears every box already placed this frame — so sun and moon values
+  // never sit on top of each other when their bearings (or rise/set
+  // azimuths) coincide. Placement order = priority: wind, sun, moon.
+  // Seeded with the controls drawn ABOVE this overlay (the +/− block, the
+  // Sadu legend, the attribution, the radar badge), which a label would
+  // otherwise vanish under. Hidden ones have no offsetParent.
   var placedLabels = [];
+  var mr = mapEl.getBoundingClientRect();
+  [mapEl.querySelector('.leaflet-control-zoom'), document.getElementById('precip-legend'),
+   mapEl.querySelector('.leaflet-control-attribution'), document.getElementById('radar-badge')
+  ].forEach(function(el){
+    if(!el || !el.offsetParent) return;
+    var r = el.getBoundingClientRect();
+    placedLabels.push({ x: r.left - mr.left + r.width / 2, y: r.top - mr.top + r.height / 2, w: r.width, h: r.height });
+  });
+  function clashes(x, y, w, h){
+    for(var i = 0; i < placedLabels.length; i++){
+      var p = placedLabels[i];
+      if(Math.abs(x - p.x) < (w + p.w) / 2 + 2 &&
+         Math.abs(y - p.y) < (h + p.h) / 2 + 2) return true;
+    }
+    return false;
+  }
+  // Steps of 7 px along the radius, outward and inward alternately
+  // (outward first, so values still stand off the arcs), each position
+  // clamped into the map — the label that used to be pushed off the edge
+  // now slides back in along the same line.
   function placeText(x, y, approxW){
-    var ax = x, ay = y, approxH = 14;
-    var dx = ax - cx, dy = ay - cy, d = Math.hypot(dx, dy) || 1;
+    var approxH = 14;
+    var dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1;
     var ux = dx / d, uy = dy / d;
-    for(var it = 0; it < 24; it++){
-      var clash = false;
-      for(var i = 0; i < placedLabels.length; i++){
-        var p = placedLabels[i];
-        if(Math.abs(ax - p.x) < (approxW + p.w) / 2 + 2 &&
-           Math.abs(ay - p.y) < (approxH + p.h) / 2 + 2){ clash = true; break; }
-      }
-      if(!clash) break;
-      ax += ux * 7; ay += uy * 7;
+    function clampX(v){ return Math.max(B.l + approxW / 2, Math.min(B.r - approxW / 2, v)); }
+    function clampY(v){ return Math.max(B.t + approxH / 2, Math.min(B.b - approxH / 2, v)); }
+    var ax = clampX(x), ay = clampY(y);
+    for(var it = 1; it < 48 && clashes(ax, ay, approxW, approxH); it++){
+      var k = (it % 2 ? 1 : -1) * Math.ceil(it / 2) * 7;
+      ax = clampX(x + ux * k); ay = clampY(y + uy * k);
     }
     placedLabels.push({ x: ax, y: ay, w: approxW, h: approxH });
     return { x: ax, y: ay };
+  }
+  // A rise/set marker is its glyph AND its time, placed as one box: the
+  // glyph sits 22 px left of the time's centre, as before, and moves with
+  // it when the pair is nudged. So a later label can't land on a glyph —
+  // the sun's "49°" used to sit under the moonset glyph.
+  function placeMarker(ox, oy, glyph, time, textAttrs){
+    var tw = time ? time.length * 7 : 0;
+    var left = -30, right = time ? tw / 2 : -14;    // box edges, relative to the time's centre
+    var mid = (left + right) / 2;
+    var p = placeText(ox + mid, oy, right - left);
+    var tx = p.x - mid;
+    parts.push('<g transform="translate('+(tx - 22).toFixed(1)+','+p.y.toFixed(1)+')">' + glyph + '</g>');
+    if(time){
+      parts.push('<text x="'+tx.toFixed(1)+'" y="'+p.y.toFixed(1)+'"' + textAttrs + '>'+time+'</text>');
+    }
   }
 
   // ── WIND arrow — REVERSED: head points at Madise from the direction
@@ -7044,15 +7084,6 @@ function drawOverlay(){
   // (Same convention as the sun arrows: showing "this is what's hitting
   // you, from there".) Plus a faint drifting-particles layer below. ──
   if(IPAD.windDir !== null && IPAD.windSpeed !== null){
-    var arrowLen = Math.min(Math.max(W, H) * 0.50, 110 + IPAD.windSpeed * 14);
-    var tail = anglePx(IPAD.windDir, arrowLen, cx, cy);  // upwind end
-    var wx1 = tail.x.toFixed(1), wy1 = tail.y.toFixed(1),
-        wx2 = cx.toFixed(1),     wy2 = cy.toFixed(1);
-    parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
-               '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
-    parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
-               '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
-
     // Speed label at the upwind tail (where the arrow starts)
     var label = '<tspan font-weight="500">' + IPAD.windSpeed.toFixed(1) + '</tspan>';
     var wTxt = IPAD.windSpeed.toFixed(1);
@@ -7062,7 +7093,29 @@ function drawOverlay(){
     }
     label += '<tspan font-weight="500"> m/s</tspan>';
     wTxt += ' m/s';
-    var wlp = placeText(tail.x, tail.y, wTxt.length * 7);
+    var wW = wTxt.length * 7;
+
+    // 110 px + 14 px per m/s, but never past the map edge along the
+    // bearing, leaving the label room at the tail. It used to be capped at
+    // half the map's LONGER side (303 px) while the map is 395 px tall, so
+    // a mostly N/S wind over ~6 m/s put the tail and its label beyond the
+    // edge, and at 14 m/s a westerly lost the "14" off the left.
+    var u = anglePx(IPAD.windDir, 1, 0, 0);          // unit vector towards the tail
+    var room = Infinity;
+    if(u.x >  0.01) room = Math.min(room, (B.r - wW / 2 - cx) / u.x);
+    if(u.x < -0.01) room = Math.min(room, (B.l + wW / 2 - cx) / u.x);
+    if(u.y >  0.01) room = Math.min(room, (B.b - 9 - cy) / u.y);
+    if(u.y < -0.01) room = Math.min(room, (B.t + 9 - cy) / u.y);
+    var arrowLen = Math.max(40, Math.min(110 + IPAD.windSpeed * 14, room));
+    var tail = anglePx(IPAD.windDir, arrowLen, cx, cy);  // upwind end
+    var wx1 = tail.x.toFixed(1), wy1 = tail.y.toFixed(1),
+        wx2 = cx.toFixed(1),     wy2 = cy.toFixed(1);
+    parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
+               '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
+    parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
+               '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
+
+    var wlp = placeText(tail.x, tail.y, wW);
     parts.push('<text x="'+wlp.x.toFixed(1)+'" y="'+wlp.y.toFixed(1)+
                '" font-family="ui-monospace, SF Mono, monospace" font-size="12"' +
                ' fill="rgba(220,240,255,1)"' +
@@ -7182,15 +7235,11 @@ function drawOverlay(){
     function arcEndpoint(p, az, time, kind, color){
       // Outset the label radially from Madise by a few px
       var outset = anglePx(az, sunRingR + 22, cx, cy);
-      parts.push('<g transform="translate('+(outset.x - 22).toFixed(1)+','+outset.y.toFixed(1)+')">' + sunGlyph(kind, color) + '</g>');
-      if(time){
-        var tp = placeText(outset.x, outset.y, time.length * 7);
-        parts.push('<text x="'+tp.x.toFixed(1)+'" y="'+tp.y.toFixed(1)+
-                   '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
-                   ' fill="rgba(255,235,210,1)"' +
-                   ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
-                   ' text-anchor="middle" dominant-baseline="central">'+time+'</text>');
-      }
+      placeMarker(outset.x, outset.y, sunGlyph(kind, color), time,
+                  ' font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                  ' fill="rgba(255,235,210,1)"' +
+                  ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                  ' text-anchor="middle" dominant-baseline="central"');
     }
     if(samples.length){
       arcEndpoint(samples[0],           samples[0].az,           srTime, 'rise', SR_COLOR);
@@ -7285,16 +7334,12 @@ function drawOverlay(){
       function moonMarker(t, kind){
         var mp = moonPosition(new Date(t), CONFIG.lat, CONFIG.lng);
         var outset = anglePx(mp.azimuth, moonRingR + 22, cx, cy);
-        parts.push('<g transform="translate('+(outset.x - 22).toFixed(1)+','+outset.y.toFixed(1)+')">' + moonGlyph(kind, MOON_COLOR) + '</g>');
         var tm = (typeof formatTime === 'function') ? formatTime(new Date(t)) : '';
-        if(tm){
-          var tp = placeText(outset.x, outset.y, tm.length * 7);
-          parts.push('<text x="'+tp.x.toFixed(1)+'" y="'+tp.y.toFixed(1)+
-                     '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
-                     ' fill="rgba(225,230,242,1)"' +
-                     ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
-                     ' text-anchor="middle" dominant-baseline="central">'+tm+'</text>');
-        }
+        placeMarker(outset.x, outset.y, moonGlyph(kind, MOON_COLOR), tm,
+                    ' font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                    ' fill="rgba(225,230,242,1)"' +
+                    ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
+                    ' text-anchor="middle" dominant-baseline="central"');
       }
       moonMarker(segStart, 'rise');
       moonMarker(segEnd,   'set');
