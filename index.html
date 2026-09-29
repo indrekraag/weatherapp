@@ -1932,6 +1932,58 @@ body {
 }
 .radar-status.warn { color: var(--warn); font-weight: 600; }
 
+/* Second control row: the status line, then the zoom presets and MAP / SAT.
+ * Styled here, outside the kiosk query, because the row is in the markup
+ * for every layout: with these rules only inside the query, an iPad turned
+ * to portrait showed five grey native buttons. The kiosk query tightens the
+ * row and keeps it on one line; here it may wrap, the phone column being
+ * too narrow for the status and the chips side by side. */
+.radar-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+}
+.radar-foot .radar-status { flex: 1 1 auto; min-width: 0; margin: 0; text-align: left; }
+/* Zoom-preset + base-map chips — the right end of the row. Same
+ * accent-amber treatment as .radar-mode-btn so they read as part of the
+ * same control family. */
+.zoom-presets {
+  flex: 0 0 auto;
+  display: flex; gap: 2px;
+}
+.zoom-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 99px;
+  font-family: -apple-system, "SF Pro Display", sans-serif;
+  font-size: 14px;
+  line-height: 17px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255,255,255,0.65);
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.zoom-btn:hover { color: rgba(255,255,255,0.92); }
+.zoom-btn.active {
+  background: linear-gradient(180deg, rgba(233,167,107,0.26) 0%, rgba(233,167,107,0.10) 100%);
+  color: rgba(255,255,255,0.96);
+}
+.zoom-sep {
+  align-self: center;
+  width: 1px; height: 14px;
+  background: rgba(255,255,255,0.14);
+  margin: 0 2px;
+}
+
 /* Radar trouble, said ON the map — where the eye already is — as well as
  * in the status line: rate-limited, stalled or unavailable (radarSetStatus).
  * Without it an outage looked exactly like a dry day. Top-centre: the
@@ -2042,7 +2094,9 @@ body {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 /* ─── Electricity price card (gridded chart) — global styles ──────── */
-#price-card .card-header { align-items: baseline; }
+/* It may wrap on a narrow phone: title and status on one line, 'Hetkel' on
+   the next. On the kiosk it stays one line (the card's height is fixed). */
+#price-card .card-header { align-items: baseline; flex-wrap: wrap; row-gap: 4px; }
 .price-now-wrap { display: flex; align-items: baseline; gap: 3px; }
 .price-now-label { font-size: 11px; color: rgba(255,255,255,0.55); margin-right: 2px; }
 .price-now { font-size: 20px; font-weight: 700; line-height: 1; }
@@ -2070,6 +2124,52 @@ body {
 .price-axis { display: flex; gap: 3px; margin-left: 30px; margin-top: 4px; }
 .price-axis > span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 9px; color: rgba(255,255,255,0.45); }
 .price-axis > span.now { color: rgba(255,255,255,0.92); font-weight: 700; }
+/* 'ELEKTRI HIND  Elering · 13:19' — the feed and when the bridge fetched
+   it; amber once that is NPS_STALE_MIN old (renderNpsStatus). */
+.price-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.price-title h2 { white-space: nowrap; }
+.price-status {
+  font-size: 11px; color: rgba(255,255,255,0.55);
+  white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.price-status.old { color: var(--warn); }
+/* 'tunni keskm.': the feed is hourly, the market settles in 15-min slots. */
+.price-basis { font-size: 11px; color: rgba(255,255,255,0.55); white-space: nowrap; margin-left: 2px; }
+/* Below zero the bars hang from the zero line, in a colour of their own
+   (PRICE_NEG_C) — drawn like zero, a free hour looked like a cheap one. */
+.price-bars > span.neg { border-radius: 0 0 2px 2px; }
+/* Midnight: a rule between 23 and 00 down through the hour labels, and
+   'homme' where tomorrow's labels start (renderNps). */
+.price-daysplit {
+  position: absolute; top: 0; bottom: -15px; width: 1px;
+  background: rgba(255,255,255,0.42); pointer-events: none;
+}
+.price-axis > span.daystart {
+  overflow: visible; white-space: nowrap; text-align: left; padding-left: 3px;
+  color: rgba(255,255,255,0.92); font-weight: 700;
+}
+/* The end cap: why the chart stops — 'homne hind ~14:00' before tomorrow's
+   prices are in, 'hinnad puuduvad alates 01:00' (amber) when the data has
+   run out. A dashed slot right of the last bar; the bars, grid and hour
+   axis give up its width (#price-card.has-cap). */
+#price-card { --price-cap-w: 70px; }
+.price-cap {
+  position: absolute; top: 0; bottom: 0; right: 0;
+  width: var(--price-cap-w);
+  display: flex; align-items: center; justify-content: center;
+  text-align: center; font-size: 10px; line-height: 1.2;
+  color: rgba(255,255,255,0.55);
+  border: 1px dashed rgba(255,255,255,0.20); border-radius: 4px;
+  pointer-events: none;
+}
+.price-cap:empty { display: none; }
+.price-cap.warn { color: var(--warn); border-color: rgba(233,167,107,0.45); }
+#price-card.cap-wide { --price-cap-w: 150px; }   /* one line: few bars are left */
+#price-card.has-cap .price-grid,
+#price-card.has-cap .price-bars { right: calc(var(--price-cap-w) + 6px); }
+#price-card.has-cap .price-axis { margin-right: calc(var(--price-cap-w) + 6px); }
+/* The night veil is kiosk-only (styled in the landscape query). */
+.night-dim { display: none; }
 
 @media (min-width: 900px) and (orientation: landscape) {
 
@@ -2141,7 +2241,7 @@ body {
      title. The chart gives up the height (60 → 52px); its tick labels go
      9 → 12px, the value tags on the peak and the current bar to 14px, and
      renderNps() thins the Y labels and adds headroom to suit. */
-  #price-card .card-header { margin-bottom: 0; flex-shrink: 0; align-items: center; }
+  #price-card .card-header { margin-bottom: 0; flex-shrink: 0; align-items: center; flex-wrap: nowrap; }
   #price-card .card-header h2 { font-size: var(--t-xs); }
   #price-card .price-now-wrap { gap: 5px; }
   #price-card .price-now { font-size: var(--t-xl); }
@@ -2155,6 +2255,39 @@ body {
   #price-card .price-axis > span { font-size: var(--t-xs); color: rgba(255,255,255,0.58); }
   #price-card .price-axis > span.now { color: rgba(255,255,255,0.92); }
   #price-card .price-bars > span .bar-val { font-size: var(--t-sm); }
+  /* Status, 'tunni keskm.' and the end cap at the 14px floor; 'homme' is
+     an axis label (12px) but at full strength. The cap is two lines. */
+  #price-card { --price-cap-w: 92px; }
+  #price-card.cap-wide { --price-cap-w: 214px; }
+  #price-card .price-status,
+  #price-card .price-basis,
+  #price-card .price-cap { font-size: var(--t-sm); }
+  #price-card .price-axis > span.daystart { color: rgba(255,255,255,0.92); }
+  #price-card .price-daysplit { bottom: -17px; }   /* on through the 2 + 15px axis */
+
+  /* NIGHT (body.night, updateNightMode): a black veil at 45 % over the
+     whole kiosk — one blended layer, no filter — the base map at 45 % over
+     the map's black on top of that, the radar frames untouched. Lifts in
+     0.3 s on a touch, falls over 2 s. Absolute, not fixed: its box is the
+     viewport either way here, and fixed children of body are what broke
+     iOS scrolling before (see DOCUMENT SCROLL PATTERN). */
+  .night-dim {
+    display: block;
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    z-index: 2000;
+    background: #000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+  }
+  body.night .night-dim { opacity: 0.45; visibility: visible; transition: opacity 2s ease; }
+  /* !important: Leaflet writes opacity:1 inline on every layer container. */
+  body.night #radar-map .base-tiles { opacity: 0.45 !important; }
+  body.night .temp-big { text-shadow: none; }
+  body.night .wind-particle { animation-play-state: paused; }
 
   /* Cards we don't want on the iPad kiosk. Phone build untouched. */
   .alert-banner,
@@ -2500,9 +2633,12 @@ body {
     min-width: 118px;
     margin-left: 0;
   }
+  /* One line, never wrapped: a wrapped row would come out of the map. A
+     long status line ellipsises instead. */
   .radar-foot {
     display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     gap: 10px;
     margin-top: 2px;
     flex-shrink: 0;
@@ -2608,43 +2744,8 @@ body {
   #radar-map.has-warning .precip-legend { top: calc(var(--map-warning-h, 0px) + 10px); }
   #radar-map.has-warning .radar-badge   { top: calc(var(--map-warning-h, 0px) + 10px); }
 
-  /* Zoom-preset + base-map chips — the right end of the second control
-   * row (see .radar-foot). Same accent-amber treatment as .radar-mode-btn
-   * so they read as part of the same control family. */
-  .zoom-presets {
-    flex: 0 0 auto;
-    display: flex; gap: 2px;
-  }
-  .zoom-btn {
-    appearance: none;
-    -webkit-appearance: none;
-    background: transparent;
-    border: none;
-    border-radius: 99px;
-    font-family: -apple-system, "SF Pro Display", sans-serif;
-    font-size: 14px;
-    line-height: 17px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    text-transform: uppercase;
-    white-space: nowrap;
-    color: rgba(255,255,255,0.65);
-    padding: 3px 9px;
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .zoom-btn:hover { color: rgba(255,255,255,0.92); }
-  .zoom-btn.active {
-    background: linear-gradient(180deg, rgba(233,167,107,0.26) 0%, rgba(233,167,107,0.10) 100%);
-    color: rgba(255,255,255,0.96);
-  }
-  .zoom-sep {
-    align-self: center;
-    width: 1px; height: 14px;
-    background: rgba(255,255,255,0.14);
-    margin: 0 2px;
-  }
+  /* (The zoom-preset + base-map chips are styled outside the query, with
+     .radar-foot — the same rules serve the kiosk and a portrait iPad.) */
 
   /* Forecast card sits in the left sidebar below the hero. Cards are
    * thinned out vertically so the whole card fits inside the sidebar
@@ -3244,16 +3345,28 @@ body {
              weatherapp2's data branch. First-test height ≈ puhangud row. -->
         <div class="glass card" id="price-card">
           <div class="card-header">
-            <h2>Elektri hind</h2>
+            <!-- Title + 'Elering · 13:19' (when nps.json was fetched; amber
+                 once it is over NPS_STALE_MIN old) — renderNpsStatus(). -->
+            <div class="price-title">
+              <h2>Elektri hind</h2>
+              <span class="price-status" id="price-status"></span>
+            </div>
+            <!-- The feed is hourly: 'Hetkel' is the mean of this hour's four
+                 15-min market slots, and says so. -->
             <div class="price-now-wrap">
               <span class="price-now-label">Hetkel:</span>
               <span class="price-now mono" id="price-now">—</span>
               <span class="price-unit">s/kWh</span>
+              <span class="price-basis" id="price-basis">tunni keskm.</span>
             </div>
           </div>
           <div class="price-chart">
             <div class="price-grid" id="price-grid"></div>
             <div class="price-bars" id="price-spark" aria-hidden="true"></div>
+            <!-- Why the chart ends where it does ('homne hind ~14:00',
+                 'hinnad puuduvad alates 01:00'), right of the last bar;
+                 empty and hidden otherwise — renderNps(). -->
+            <div class="price-cap" id="price-cap"></div>
             <!-- 'Hinnad puuduvad' when there is nothing to chart — showNpsEmpty() -->
             <div class="card-empty" id="price-empty"></div>
           </div>
@@ -3267,6 +3380,9 @@ body {
           <div style="margin-top:4px;font-size:10px;opacity:0.4;">v1.1</div>
         </div>
   </div>
+<!-- Night veil over the whole kiosk (body.night — see updateNightMode).
+     Kiosk only, takes no touches; display:none everywhere else. -->
+<div class="night-dim" aria-hidden="true"></div>
 <script>
 /* ═════════════════════════════════════════════════════════════════════
  * Madise Ilmaradar — data wiring
@@ -3311,6 +3427,14 @@ var WX_RENDERED = false;       // renderWeather() has succeeded at least once
 var STATION_OBS = {};          // chip prefix → { ms, force } — see setStationAge()
 var WX_UV_FROM_EMHI = false;
 
+/* The kiosk layout's own media query — the same one the CSS uses. It is
+   live: an iPad turned to portrait stops matching, and the kiosk tears
+   itself down (ipadLeave) rather than running on in the wrong layout.
+   Defined up here because the first fetches, which skip the cards the
+   kiosk hides, run before the radar script is parsed. */
+var KIOSK_MQ = window.matchMedia ? window.matchMedia('(min-width: 900px) and (orientation: landscape)') : null;
+function isKioskLayout(){ return !!(KIOSK_MQ && KIOSK_MQ.matches); }
+
 function byId(id){ return document.getElementById(id); }
 function pad(n){ return n < 10 ? '0' + n : '' + n; }
 function round1(n){ return Math.round(n * 10) / 10; }
@@ -3343,6 +3467,9 @@ function ageText(ageMin){
     var ds = byId('datestamp'); if(ds) ds.textContent = d.getDate() + '. ' + ET_MONTHS[d.getMonth()];
     updateSunCountdown();
     updateStaleIndicator();
+    updateNpsClock();
+    // Defined with the kiosk code further down; the first tick runs before it.
+    if(typeof updateNightMode === 'function') updateNightMode();
   }
   tick();
   setInterval(tick, 30 * 1000);
@@ -3367,6 +3494,10 @@ function manualRefresh(){
   fetchSolarWind();
   fetchKurevere();
   fetchLaaneNigula();       // also brings the warnings
+  fetchNps();
+  // The radar's frame list too — unless it is backing off after a rate
+  // limit (radarTilesFailed): a tap must not undo the back-off.
+  if(typeof RADAR !== 'undefined' && RADAR.map && !RADAR.retryTimer) radarFetchData();
 }
 
 /* ⟲ throws away the cached weather and the app-shell cache — the one
@@ -4904,7 +5035,22 @@ function renderPollen(data){
     applyPollen('pollen-alder',   pollenLevel(alder));
   }catch(e){}
 }
+/* ─── Feeds for cards the kiosk hides ─────────────────────────────────
+ * Pollen (.duo-air) and the aurora block — Kp, Ovation, Bz (.duo-sunmoon)
+ * — are display:none in the kiosk layout, yet all four were polled all day,
+ * the solar-wind one every 5 min against an endpoint NOAA has retired (a
+ * 404 the browser reports as a CORS error). While the kiosk layout is up
+ * they are not fetched; the portrait (phone) layout shows the cards and
+ * gets them as before, and ipadLeave() fetches them the moment it does. */
+function fetchKioskHiddenFeeds(){
+  fetchPollen();
+  fetchKpForecast();
+  fetchOvation();
+  fetchSolarWind();
+}
+
 function fetchPollen(){
+  if(isKioskLayout()) return;        // card hidden — see fetchKioskHiddenFeeds
   var url = 'https://air-quality-api.open-meteo.com/v1/air-quality?latitude=' + CONFIG.lat + '&longitude=' + CONFIG.lng + '&current=alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,ragweed_pollen&timezone=auto';
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url, true);
@@ -5343,6 +5489,10 @@ function renderWarnings(data){
  * ═══════════════════════════════════════════════════════════════ */
 var EMHI_LOCAL_URL = 'data/emhi.json';
 var EMHI_REMOTE_URL = 'https://raw.githubusercontent.com/indrekraag/weatherapp2/data/emhi.json';
+/* The local data/ copies (EMHI, NPS) exist only on a dev machine — data/ is
+   never committed — so on GitHub Pages trying them first was a certain 404
+   before every remote fetch. There, go straight to the bridge. */
+var ON_GH_PAGES = /\.github\.io$/i.test(location.hostname);
 
 function fetchLaaneNigulaFrom(url, onFail){
   var xhr = new XMLHttpRequest();
@@ -5363,6 +5513,7 @@ function fetchLaaneNigulaFrom(url, onFail){
   xhr.send();
 }
 function fetchLaaneNigula(){
+  if(ON_GH_PAGES){ fetchLaaneNigulaFrom(EMHI_REMOTE_URL); return; }
   fetchLaaneNigulaFrom(EMHI_LOCAL_URL, function(){ fetchLaaneNigulaFrom(EMHI_REMOTE_URL); });
 }
 
@@ -5395,6 +5546,16 @@ function priceBarColor(snt){
 }
 function priceSnt(eur_mwh){ return eur_mwh / 10 * (1 + NPS_VAT_PCT / 100); }
 
+/* Below zero: a colour of its own. priceBarColor() clamps at its first
+   stop, so a −3 s/kWh hour came out the same green as a free one. */
+var PRICE_NEG_C = [80, 200, 230, 1];
+function priceColor(snt){ return snt < 0 ? rgbaStr(PRICE_NEG_C) : priceBarColor(snt); }
+/* '12.8', '−3.1' — a true minus, as everywhere else on the kiosk. */
+function priceText(snt){
+  var r = Math.round(snt * 10) / 10;
+  return (r < 0 ? '−' : '') + Math.abs(r).toFixed(1);
+}
+
 var NPS_LOCAL_URL  = 'data/nps.json';
 var NPS_REMOTE_URL = 'https://raw.githubusercontent.com/indrekraag/weatherapp2/data/nps.json';
 function fetchNpsFrom(url, onFail){
@@ -5414,32 +5575,77 @@ function fetchNpsFrom(url, onFail){
   xhr.send();
 }
 function fetchNps(){
-  fetchNpsFrom(NPS_LOCAL_URL, function(){
+  var remote = function(){
     fetchNpsFrom(NPS_REMOTE_URL, function(){ if(!NPS_RENDERED) showNpsEmpty(); });
-  });
+  };
+  if(ON_GH_PAGES) remote();          // no data/ folder there — see ON_GH_PAGES
+  else fetchNpsFrom(NPS_LOCAL_URL, remote);
 }
 /* The card has a fixed height on the kiosk, so an empty one kept its size
    but read as broken: a blank chart under 'Hetkel: —'. Say why instead, and
    clear bars left over from an earlier render so an expired chart can't
    linger. A failed fetch only blanks the card if nothing was ever drawn. */
 var NPS_RENDERED = false;
-function showNpsEmpty(){
-  ['price-spark', 'price-grid', 'price-axis'].forEach(function(id){
+function showNpsEmpty(text){
+  ['price-spark', 'price-grid', 'price-axis', 'price-cap'].forEach(function(id){
     if(byId(id)) byId(id).innerHTML = '';
   });
+  var card = byId('price-card');
+  if(card){ card.classList.remove('has-cap'); card.classList.remove('cap-wide'); }
   var nowEl = byId('price-now');
   if(nowEl){ nowEl.textContent = '—'; nowEl.style.color = ''; }
-  if(byId('price-empty')) byId('price-empty').textContent = 'Hinnad puuduvad';
+  if(byId('price-basis')) byId('price-basis').style.display = 'none';
+  if(byId('price-empty')) byId('price-empty').textContent = text || 'Hinnad puuduvad';
 }
+
+/* 'Elering · 13:19' — when the bridge fetched nps.json (its fetched_at).
+   Past NPS_STALE_MIN the bridge has missed its runs: amber, with the age,
+   spelled like every other age on the kiosk. Re-evaluated by the tick. */
+var NPS_STALE_MIN = 120;
+var NPS_DATA = null;           // the last nps.json drawn, for updateNpsClock()
+var NPS_RENDER_SLOT = -1;      // the half-hour it was drawn in
+function renderNpsStatus(){
+  var el = byId('price-status');
+  if(!el) return;
+  var ms = NPS_DATA && NPS_DATA.fetched_at ? Date.parse(NPS_DATA.fetched_at) : NaN;
+  if(isNaN(ms)){ el.textContent = ''; el.className = 'price-status'; return; }
+  var ageMin = (Date.now() - ms) / 60000;
+  var old = ageMin > NPS_STALE_MIN;
+  var when = stampText(ms);
+  // From an earlier day the age alone ('26 t vana'): the header has room
+  // for the title, this line and 'Hetkel', not for a date as well.
+  el.textContent = 'Elering · ' + (!old ? when : when.length > 5 ? ageText(ageMin) : when + ' · ' + ageText(ageMin));
+  el.className = 'price-status' + (old ? ' old' : '');
+}
+/* From the clock tick. The chart's window is 'now − 3 h onwards', but it
+   only moved when a fetch succeeded: with the bridge or the network down,
+   'Hetkel' stayed on an hour long gone. So redraw from the last data every
+   half-hour (the end cap changes at 13:30 and 14:00 too), and keep the
+   status age current in between. */
+function updateNpsClock(){
+  if(!NPS_DATA) return;
+  if(Math.floor(Date.now() / 1800000) !== NPS_RENDER_SLOT) renderNps(NPS_DATA);
+  else renderNpsStatus();
+}
+
+/* Tomorrow's day-ahead prices are published around 14:00 local; from 13:30
+   a chart that stops at midnight gets an end cap saying so, rather than
+   reading as 'that is all there is'. */
+var NPS_TOMORROW_DUE_MIN = 13 * 60 + 30;
+var NPS_NEG_MIN_FRAC = 0.12;   // the band below zero is at least this share of the chart
 function renderNps(data){
   try{
     var barsEl = byId('price-spark'), gridEl = byId('price-grid'), axisEl = byId('price-axis');
+    var card = byId('price-card'), capEl = byId('price-cap');
     if(!barsEl) return;
+    NPS_DATA = data;
+    NPS_RENDER_SLOT = Math.floor(Date.now() / 1800000);
+    renderNpsStatus();
     var prices = (data && data.prices) || [];
     if(!prices.length){ showNpsEmpty(); return; }
     if(typeof data.vat_pct === 'number') NPS_VAT_PCT = data.vat_pct;
-    var byTs = {};
-    prices.forEach(function(p){ byTs[p.ts] = p.eur_mwh; });
+    var byTs = {}, lastTs = 0;
+    prices.forEach(function(p){ byTs[p.ts] = p.eur_mwh; if(p.ts > lastTs) lastTs = p.ts; });
 
     // Rolling window: 3 h of context behind, then everything available
     // ahead. Missing future hours stop the chart (no fabricated bars).
@@ -5453,89 +5659,234 @@ function renderNps(data){
       if(eur === undefined){ if(d.getTime() < nowHourMs) continue; break; }
       items.push({ date: d, snt: priceSnt(eur), isNow: d.getTime() === nowHourMs, isPast: d.getTime() < nowHourMs });
     }
-    if(items.length < 2){ showNpsEmpty(); return; }
+    if(items.length < 2){
+      // Nothing (or one past hour) left to chart: the data has run out.
+      showNpsEmpty(lastTs && lastTs * 1000 < nowHourMs
+        ? 'Hinnad puuduvad alates ' + stampText(lastTs * 1000 + 3600000) : null);
+      return;
+    }
     NPS_RENDERED = true;
     if(byId('price-empty')) byId('price-empty').textContent = '';
-    // Indices of the highest / lowest visible bars (for value tags).
-    var maxIdx = 0, minIdx = 0;
+    var n = items.length;
+    var nowIdx = -1;
+    items.forEach(function(x, i){ if(x.isNow) nowIdx = i; });
+
+    // END CAP, first: it takes width from the bars, and everything below
+    // is measured. No current hour means the data ran out (a late bridge):
+    // say from when, instead of leaving 'Hetkel' on an expired hour.
+    var cap = '', capWarn = false;
+    if(nowIdx < 0){
+      cap = 'hinnad puuduvad alates ' + stampText(items[n - 1].date.getTime() + 3600000);
+      capWarn = true;
+    } else {
+      var tomorrow0 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+      var minOfDay = now.getHours() * 60 + now.getMinutes();
+      if(minOfDay >= NPS_TOMORROW_DUE_MIN && items[n - 1].date.getTime() <= tomorrow0){
+        cap = 'homne hind ' + (minOfDay < 14 * 60 ? '~14:00' : 'tulekul');
+      }
+    }
+    if(capEl){ capEl.textContent = cap; capEl.className = 'price-cap' + (capWarn ? ' warn' : ''); }
+    if(card){
+      card.classList.toggle('has-cap', !!cap);
+      card.classList.toggle('cap-wide', capWarn);   // few bars left: the cap gets one line
+    }
+
+    // The highest bar, and the cheapest from this hour on — the one worth
+    // waiting for — get their value as a tag.
+    var maxIdx = 0, minIdx = 0, cheapIdx = -1;
     items.forEach(function(x, i){
       if(x.snt > items[maxIdx].snt) maxIdx = i;
       if(x.snt < items[minIdx].snt) minIdx = i;
+      if(!x.isPast && (cheapIdx < 0 || x.snt < items[cheapIdx].snt)) cheapIdx = i;
     });
-    var maxV = items[maxIdx].snt;
+    var maxV = items[maxIdx].snt, minV = items[minIdx].snt;
     var step = maxV <= 10 ? 2 : maxV <= 20 ? 5 : maxV <= 60 ? 10 : 20;
     var top = Math.max(step * 2, Math.ceil(maxV / step) * step);
+    // Negative prices: the axis goes below zero, to a round figure under
+    // the lowest (1, 2, 5, 10 … s/kWh), and never so shallow that a small
+    // negative hour is a hairline.
+    var bottom = 0;
+    if(minV < 0){
+      var mag = Math.pow(10, Math.floor(Math.log(-minV) / Math.LN10));
+      var nice = [1, 2, 5, 10];
+      for(var k = 0; k < nice.length; k++){ if(nice[k] * mag >= -minV){ bottom = -nice[k] * mag; break; } }
+    }
     // Guarantee headroom above the tallest bar so its value tag isn't clipped.
     // The tag is a fixed number of pixels (14px text on the kiosk), so the
     // share of the chart it needs depends on how tall the chart is: 18% of
     // the phone's 96px, a third of the kiosk's 52px.
     var chartPx = barsEl.clientHeight || 96;
     var tagFrac = Math.min(0.45, 17 / chartPx);
-    while(maxV > (1 - tagFrac) * top) top += step;
+    while(maxV - bottom > (1 - tagFrac) * (top - bottom)) top += step;
+    // The band below zero gets NPS_NEG_MIN_FRAC of the final height at
+    // least; deepening it can cost the peak its headroom, so check again.
+    if(minV < 0 && -bottom < NPS_NEG_MIN_FRAC * top / (1 - NPS_NEG_MIN_FRAC)){
+      bottom = -NPS_NEG_MIN_FRAC * top / (1 - NPS_NEG_MIN_FRAC);
+      while(maxV - bottom > (1 - tagFrac) * (top - bottom)) top += step;
+    }
+    var range = top - bottom;
+    var zeroPct = -bottom / range * 100;
 
     if(gridEl){
       gridEl.innerHTML = '';
       // Label (and rule) every step only while the labels are at least 15px
       // apart; on the kiosk's short chart 12px labels would otherwise stack.
-      var every = Math.max(1, Math.ceil(15 / (chartPx * step / top)));
-      for(var y = 0; y <= top; y += step * every){
+      // The lines run from the lowest multiple at or above the floor, so the
+      // zero line is always among them.
+      var every = Math.max(1, Math.ceil(15 / (chartPx * step / range)));
+      var yStep = step * every;
+      for(var y = Math.ceil(bottom / yStep) * yStep; y <= top; y += yStep){
         var line = document.createElement('div');
         line.className = 'price-gridline' + (y === 0 ? ' zero' : '');
-        line.style.bottom = (y / top * 100) + '%';
-        var lab = document.createElement('span'); lab.textContent = y;
+        line.style.bottom = ((y - bottom) / range * 100) + '%';
+        var lab = document.createElement('span'); lab.textContent = y < 0 ? '−' + (-y) : y;
         line.appendChild(lab);
         gridEl.appendChild(line);
       }
     }
 
-    var labelEvery = items.length > 22 ? 2 : 1;
+    // Bars grow from the zero line: up, or — below zero — down, in
+    // PRICE_NEG_C, brightest at the tip, and at least 3px so a small
+    // negative price is still a visible bar. (Relative 'bottom' in % of the
+    // chart moves a bar off the chart floor; a % margin would be of its width.)
+    var negMinPct = 3 / chartPx * 100;
+    var bars = [];
     barsEl.innerHTML = '';
-    if(axisEl) axisEl.innerHTML = '';
-    items.forEach(function(x, idx){
+    items.forEach(function(x){
       var bar = document.createElement('span');
-      bar.style.height = Math.max(2, (x.snt / top) * 100) + '%';
-      var top2 = priceBarColor(x.snt);
-      var base = top2.replace(/[\d.]+\)$/, function(m){ return (parseFloat(m) * 0.30).toFixed(2) + ')'; });
-      bar.style.background = 'linear-gradient(180deg, ' + top2 + ' 0%, ' + base + ' 100%)';
-      bar.setAttribute('title', pad(x.date.getHours()) + ':00 · ' + x.snt.toFixed(1) + ' s/kWh');
-      bar.className = x.isNow ? 'now' : (x.isPast ? 'past' : '');
-      barsEl.appendChild(bar);
-      if(axisEl){
-        var s = document.createElement('span');
-        s.textContent = (x.isNow || idx % labelEvery === 0) ? pad(x.date.getHours()) : '';
-        if(x.isNow) s.className = 'now';
-        axisEl.appendChild(s);
+      var col = priceColor(x.snt);
+      var base = col.replace(/[\d.]+\)$/, function(m){ return (parseFloat(m) * 0.30).toFixed(2) + ')'; });
+      var h;
+      if(x.snt < 0){
+        h = Math.max(negMinPct, -x.snt / range * 100);
+        bar.style.bottom = (zeroPct - h) + '%';
+        bar.style.background = 'linear-gradient(0deg, ' + col + ' 0%, ' + base + ' 100%)';
+      } else {
+        h = Math.max(2, x.snt / range * 100);
+        if(zeroPct) bar.style.bottom = zeroPct + '%';
+        bar.style.background = 'linear-gradient(180deg, ' + col + ' 0%, ' + base + ' 100%)';
       }
+      bar.style.height = h + '%';
+      bar.setAttribute('title', pad(x.date.getHours()) + ':00 · ' + priceText(x.snt) + ' s/kWh');
+      bar.className = (x.isNow ? 'now' : (x.isPast ? 'past' : '')) + (x.snt < 0 ? ' neg' : '');
+      barsEl.appendChild(bar);
+      bars.push(bar);
     });
 
-    // Value tags above the highest bar and the current-hour bar
-    var nowIdx = -1;
-    for(var ni = 0; ni < items.length; ni++){ if(items[ni].isNow){ nowIdx = ni; break; } }
-    function tagBar(idx, val, cls){
-      var bar = barsEl.children[idx];
+    // Midnight inside the window: a rule between 23 and 00. Where tomorrow
+    // starts (not the midnight just past, in the small hours), its first
+    // hour label reads 'homme' — with today's and tomorrow's prices on one
+    // axis, '19' came twice and nothing said which was which. Kept to '00'
+    // when tomorrow is only that one bar (the end cap speaks for the rest).
+    var midIdx = -1;
+    for(var mi = 1; mi < n; mi++){ if(items[mi].date.getHours() === 0){ midIdx = mi; break; } }
+    if(midIdx > 0){
+      var split = document.createElement('div');
+      split.className = 'price-daysplit';
+      // Bar i starts at i·(W + gap)/n; the rule sits in the 3px gap before it.
+      split.style.left = 'calc((100% + 3px) * ' + (midIdx / n).toFixed(5) + ' - 2px)';
+      barsEl.insertBefore(split, barsEl.firstChild);   // under the value tags
+    }
+    var homme = midIdx > nowIdx && nowIdx >= 0 && midIdx <= n - 2 &&
+                items[midIdx].date.getDate() !== now.getDate();
+
+    // Hour labels: every other one past 22 bars, counted from the current
+    // hour, so 'now' is always a labelled slot. It used to be forced in
+    // between two labelled neighbours and crowd them ('0405 06').
+    var labelEvery = n > 22 ? 2 : 1;
+    var anchor = nowIdx >= 0 ? nowIdx : 0;
+    var axisSpans = [];
+    if(axisEl){
+      axisEl.innerHTML = '';
+      items.forEach(function(x, idx){
+        var s = document.createElement('span');
+        s.textContent = (idx - anchor) % labelEvery === 0 ? pad(x.date.getHours()) : '';
+        if(x.isNow) s.className = 'now';
+        axisEl.appendChild(s);
+        axisSpans.push(s);
+      });
+      if(homme){
+        var ds = axisSpans[midIdx];
+        ds.textContent = 'homme';
+        ds.className = 'daystart';     // not 'day': that is the 7-day tile
+        // 'homme' runs right from the rule, over the next slot or two:
+        // blank the hour labels it would sit on.
+        var rg = document.createRange();
+        rg.selectNodeContents(ds);
+        var dayRight = rg.getBoundingClientRect().right;
+        for(var j = midIdx + 1; j < n && dayRight; j++){
+          var sr = axisSpans[j].getBoundingClientRect();
+          if(sr.left + sr.width / 2 - 8 > dayRight + 3) break;
+          axisSpans[j].textContent = '';
+        }
+      }
+    }
+
+    // Value tags: the cheapest hour ahead ('odavaim 2.1'), the peak and the
+    // current hour. A tag is kept inside the chart, lifted clear of taller
+    // bars it spans ('odavaim 2.1' is five bars wide; over a −3.1 it stood
+    // in the zero-line gap between its neighbours), and dropped if it would
+    // sit on one placed before it — the current hour's value is in the
+    // header anyway.
+    var chartBox = barsEl.getBoundingClientRect();
+    var barBoxes = bars.map(function(b){ return b.getBoundingClientRect(); });
+    var placed = [];
+    function tagBar(idx, text, cls){
+      var bar = bars[idx];
       if(!bar) return;
       var t = document.createElement('span');
       t.className = 'bar-val' + (cls ? ' ' + cls : '');
-      t.textContent = val.toFixed(1);
+      t.textContent = text;
       bar.appendChild(t);
+      var r0 = t.getBoundingClientRect();
+      if(!r0.width) return;                      // not laid out (hidden card)
+      // Centred on its bar, or reaching right or left from it — whichever
+      // has to rise least over taller bars it spans — always inside the chart.
+      var half = (r0.width - barBoxes[idx].width) / 2, best = null;
+      [0, half, -half].forEach(function(dx){
+        var l = r0.left + dx, rr = r0.right + dx;
+        if(rr > chartBox.right){ l -= rr - chartBox.right; rr = chartBox.right; }
+        if(l < chartBox.left){ rr += chartBox.left - l; l = chartBox.left; }
+        var clear = r0.bottom;
+        barBoxes.forEach(function(b){
+          if(b.right > l && b.left < rr && b.top - 1 < clear) clear = b.top - 1;
+        });
+        var lift = Math.max(0, Math.min(r0.bottom - clear, r0.top - chartBox.top));
+        if(!best || lift < best.lift - 0.5) best = { dx: l - r0.left, lift: lift };
+      });
+      if(best.dx) t.style.marginLeft = best.dx + 'px';
+      if(best.lift) t.style.marginBottom = (1 + best.lift) + 'px';
+      var r = t.getBoundingClientRect();
+      for(var p = 0; p < placed.length; p++){
+        var q = placed[p];
+        if(r.left < q.right + 3 && r.right > q.left - 3 && r.top < q.bottom && r.bottom > q.top){
+          bar.removeChild(t);
+          return;
+        }
+      }
+      placed.push(r);
     }
-    tagBar(maxIdx, items[maxIdx].snt, 'max');
-    if(nowIdx >= 0 && nowIdx !== maxIdx) tagBar(nowIdx, items[nowIdx].snt, 'now');
+    // The cheapest hour ahead first: it is what someone planning a load
+    // looks for, and the Y axis gives the scale if the peak's tag must go.
+    if(cheapIdx >= 0 && cheapIdx !== maxIdx){
+      tagBar(cheapIdx, 'odavaim ' + priceText(items[cheapIdx].snt), 'min');
+    }
+    tagBar(maxIdx, priceText(maxV), 'max');
+    if(nowIdx >= 0 && nowIdx !== maxIdx && nowIdx !== cheapIdx){
+      tagBar(nowIdx, priceText(items[nowIdx].snt), 'now');
+    }
 
-    var nowItem = items.filter(function(x){ return x.isNow; })[0];
     var nowEl = byId('price-now');
-    if(nowEl && nowItem){
-      nowEl.textContent = nowItem.snt.toFixed(1);
-      nowEl.style.color = priceBarColor(nowItem.snt).replace(/[\d.]+\)$/, '1)');
+    if(nowEl){
+      if(nowIdx >= 0){
+        nowEl.textContent = priceText(items[nowIdx].snt);
+        nowEl.style.color = priceColor(items[nowIdx].snt).replace(/[\d.]+\)$/, '1)');
+      } else {
+        nowEl.textContent = '—';
+        nowEl.style.color = '';
+      }
     }
-    var future = items.filter(function(x){ return !x.isPast; });
-    if(future.length){
-      var minH = future.reduce(function(a, b){ return b.snt < a.snt ? b : a; });
-      var maxH = future.reduce(function(a, b){ return b.snt > a.snt ? b : a; });
-      if(byId('price-min')) byId('price-min').textContent = pad(minH.date.getHours()) + ':00 · ' + minH.snt.toFixed(1);
-      if(byId('price-max')) byId('price-max').textContent = pad(maxH.date.getHours()) + ':00 · ' + maxH.snt.toFixed(1);
-    }
-    if(byId('price-status')) byId('price-status').textContent = 's/kWh · käibemaksuga (' + NPS_VAT_PCT + '%) · Nord Pool / Elering';
+    if(byId('price-basis')) byId('price-basis').style.display = nowIdx >= 0 ? '' : 'none';
   }catch(e){ console.warn('renderNps error', e); }
 }
 /* One request in flight and at most one retry pending. The old code queued
@@ -5671,6 +6022,7 @@ function renderKpForecast(data){
   }catch(e){}
 }
 function fetchKpForecast(){
+  if(isKioskLayout()) return;        // card hidden — see fetchKioskHiddenFeeds
   var xhr = new XMLHttpRequest();
   xhr.open('GET', 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json', true);
   xhr.timeout = 10000;
@@ -5709,6 +6061,7 @@ function renderOvation(data){
   }catch(e){}
 }
 function fetchOvation(){
+  if(isKioskLayout()) return;        // card hidden — see fetchKioskHiddenFeeds
   var xhr = new XMLHttpRequest();
   xhr.open('GET', 'https://services.swpc.noaa.gov/json/ovation_aurora_latest.json', true);
   xhr.timeout = 10000;
@@ -5725,16 +6078,25 @@ function fetchOvation(){
   xhr.send();
 }
 
+/* Bz from NOAA's summary product, [{bt, bz_gsm, time_tag}] — 61 bytes.
+ * products/solar-wind/mag-1-day.json (a header row + rows) is gone: 404,
+ * seen by the browser as a CORS failure. The JSON-feed replacement,
+ * json/rtsw/rtsw_mag_1m.json, is 1.5 MB, too much every 5 min for one
+ * figure. The old table form is still read, for a cached copy. */
 function renderSolarWind(data){
   try{
-    if(!Array.isArray(data) || data.length < 2) return;
-    var header = data[0];
-    var idx = header.indexOf('bz_gsm');
-    if(idx < 0) return;
+    if(!Array.isArray(data) || !data.length) return;
     var last = null;
-    for(var i = data.length - 1; i >= 1; i--){
-      var v = parseFloat(data[i][idx]);
-      if(!isNaN(v)){ last = v; break; }
+    if(data[0] && !Array.isArray(data[0])){
+      var bz = parseFloat(data[0].bz_gsm);
+      if(!isNaN(bz)) last = bz;
+    } else {
+      var idx = data[0].indexOf('bz_gsm');
+      if(idx < 0) return;
+      for(var i = data.length - 1; i >= 1; i--){
+        var v = parseFloat(data[i][idx]);
+        if(!isNaN(v)){ last = v; break; }
+      }
     }
     var el = byId('solar-bz');
     if(!el) return;
@@ -5746,8 +6108,9 @@ function renderSolarWind(data){
   }catch(e){}
 }
 function fetchSolarWind(){
+  if(isKioskLayout()) return;        // card hidden — see fetchKioskHiddenFeeds
   var xhr = new XMLHttpRequest();
-  xhr.open('GET', 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json', true);
+  xhr.open('GET', 'https://services.swpc.noaa.gov/products/summary/solar-wind-mag-field.json', true);
   xhr.timeout = 10000;
   xhr.onload = function(){
     if(xhr.status !== 200){ console.warn('solarwind HTTP', xhr.status); return; }
@@ -6442,6 +6805,8 @@ var RADAR = {
   idleTimer: null,        // return to the preset view after a touch (radarNoteInteraction)
   lastTouchMs: 0,
   baseLayers: null,       // { satellite, light } — see initRadar
+  libWaitSince: 0,        // first initRadar() without Leaflet
+  libMissing: false,      // …and 10 s later still none: said so on the map
   TILE_SIZE: 256,
   COLOR: 2,               // RainViewer colour scheme 2 = Universal Blue (1 is "Original") — see RADAR_SCHEME_STOPS
   SMOOTH: 1,              // 1 = smooth
@@ -6497,9 +6862,20 @@ function renderRadarLegend(){
 var RADAR_RM = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
 function initRadar(){
-  // Defer if Leaflet or the DOM or CONFIG aren't ready yet
+  // Defer if Leaflet or the DOM or CONFIG aren't ready yet. Leaflet comes
+  // from a CDN; if it has not arrived in 10 s it most likely never will
+  // this page load (the hourly reload tries again), so say so on the map
+  // rather than 'Laen radaripilte…' for the rest of the hour, and ask less
+  // often. The rest of the kiosk does not wait for it (initIpadEnhancements).
   if(typeof L === 'undefined' || typeof CONFIG === 'undefined' || !document.getElementById('radar-map')){
-    setTimeout(initRadar, 300);
+    if(!RADAR.libWaitSince) RADAR.libWaitSince = Date.now();
+    var waited = Date.now() - RADAR.libWaitSince;
+    if(waited > 10000 && !RADAR.libMissing && typeof L === 'undefined'){
+      RADAR.libMissing = true;
+      radarShowNone();        // no Sadu key over an empty map
+      radarSetStatus('warn', 'Radar pole saadaval · kaart ei laadinud');
+    }
+    setTimeout(initRadar, RADAR.libMissing ? 5000 : 300);
     return;
   }
   // Guard against double-init
@@ -6523,14 +6899,15 @@ function initRadar(){
   // imagery: CARTO's light_all now answers every tile with an "API KEY
   // REQUIRED" watermark — HTTP 200, so nothing ever errored. Its data ends
   // at z16 (z17 is a "Map data not yet available" tile): maxNativeZoom.
+  // className 'base-tiles': the night dim darkens the base, not the radar.
   RADAR.baseLayers = {
     satellite: L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 18, updateWhenIdle: true, keepBuffer: 1,
+      { maxZoom: 18, updateWhenIdle: true, keepBuffer: 1, className: 'base-tiles',
         attribution: 'Tiles © Esri' }),
     light: L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 19, maxNativeZoom: 16, updateWhenIdle: true, keepBuffer: 1,
+      { maxZoom: 19, maxNativeZoom: 16, updateWhenIdle: true, keepBuffer: 1, className: 'base-tiles',
         attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap' })
   };
   ipadBaseMap('satellite');
@@ -6583,6 +6960,9 @@ function initRadar(){
   // Fetch data and set up auto-refresh
   radarFetchData();
   RADAR.refreshTimer = setInterval(radarFetchData, 5 * 60 * 1000);
+
+  // The kiosk's layout half may already be up, waiting for the map.
+  if(typeof IPAD !== 'undefined' && IPAD.active && !IPAD.mapOn) ipadEnterMap();
 }
 
 function radarFetchData(){
@@ -7048,7 +7428,11 @@ window.addEventListener('DOMContentLoaded', function(){
  * 260px-tall vertical card with just the timeline.
  * ═══════════════════════════════════════════════════════════════════════ */
 var IPAD = {
-  active: false,
+  active: false,             // the kiosk layout is set up (landscape ≥ 900 px) — see ipadLeave()
+  mapOn: false,              // …and its map part: overlays, preset view (needs Leaflet)
+  wired: false,              // one-time listeners installed (resize, wake-up refetch)
+  mapWired: false,           // one-time map listeners installed (redraw on move / zoom)
+  condHome: null,            // where #wx-cond lives in the phone markup, to put it back
   preset: '200',             // active zoom preset (ZOOM_PRESETS key) — the idle timer returns here
   cloudLayer: null,          // RainViewer IR-cloud tile layer (toggle)
   cloudsOn: false,
@@ -7061,16 +7445,39 @@ var IPAD = {
   resizeTimer: null
 };
 
-function isLandscapeIpad(){
-  return window.matchMedia('(min-width: 900px) and (orientation: landscape)').matches;
+function isLandscapeIpad(){ return isKioskLayout(); }
+
+/* ROTATION. The kiosk used to set itself up once, 900 ms after load, and
+ * only if it loaded in landscape. Turned to portrait it kept everything —
+ * the overlays fell into the page flow, 24 particle animations ran on
+ * unseen, the rain row stayed in mm; loaded in portrait and then turned,
+ * it never set up at all (no sun, moon or wind, no condition line under
+ * the temperature). The layout's media query now drives it both ways:
+ * entering landscape runs initIpadEnhancements(), leaving runs
+ * ipadLeave(). addListener, not addEventListener('change'): the form every
+ * Safari the stand iPad could be running understands. */
+if(KIOSK_MQ && KIOSK_MQ.addListener){
+  KIOSK_MQ.addListener(function(){
+    if(KIOSK_MQ.matches) initIpadEnhancements();
+    else ipadLeave();
+  });
 }
 
+/* Two halves, so the kiosk does not depend on the Leaflet CDN: the layout
+ * half runs straight away; the map half runs once the map exists — now if
+ * it does, otherwise initRadar() calls ipadEnterMap() when it has built
+ * it. A failed Leaflet download used to hold back the whole setup (rain
+ * row in %, no condition line), not just the map. */
 function initIpadEnhancements(){
-  if(!isLandscapeIpad()) return;     // phone — bail out
-  if(!RADAR.map){ setTimeout(initIpadEnhancements, 500); return; }
-  if(IPAD.active) return;
-  IPAD.active = true;
+  if(!isLandscapeIpad()) return;     // phone / portrait — ipadLeave() is the other half
+  if(!IPAD.active){
+    IPAD.active = true;
+    ipadEnterLayout();
+  }
+  if(RADAR.map && !IPAD.mapOn) ipadEnterMap();
+}
 
+function ipadEnterLayout(){
   // iPad rain row defaults to mm/h (actual amount) rather than the phone
   // default "tõenäosus" (probability) — when you're staring at the radar
   // map the relevant question is amount, not likelihood.
@@ -7079,11 +7486,13 @@ function initIpadEnhancements(){
   /* The "Hetkeilm madisel" header row is hidden on the kiosk (CSS), so
      move the condition text it contained down into the temperature block
      before that row disappears. Done here rather than in the markup so
-     the phone layout keeps its original header. #wx-cond keeps its id, so
-     renderWeather() goes on writing to it untouched. */
+     the phone layout keeps its original header — ipadLeave() puts it
+     back. #wx-cond keeps its id, so renderWeather() goes on writing to it
+     untouched. */
   var condEl = document.getElementById('wx-cond');
   var heroMain = document.querySelector('.hero-main');
   if(condEl && heroMain && condEl.parentNode !== heroMain){
+    IPAD.condHome = { parent: condEl.parentNode, next: condEl.nextSibling };
     heroMain.appendChild(condEl);
   }
 
@@ -7096,13 +7505,70 @@ function initIpadEnhancements(){
     if(owmSep) owmSep.style.display = '';
   }
 
+  if(!IPAD.wired){
+    IPAD.wired = true;
+    /* Refresh all fetches when the page becomes visible again (iPad woke
+     * from sleep, user came back to the Safari tab, etc.). setInterval
+     * pauses while the page is hidden, so without this Kurevere and the
+     * other station feeds would stay stale until the next 5-min tick.
+     * (The radar has its own, radarOnVisibility.) */
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'visible'){
+        if(typeof fetchKurevere      === 'function') fetchKurevere();
+        if(typeof fetchLaaneNigula   === 'function') fetchLaaneNigula();   // + warnings
+        if(typeof fetchWeatherAndForecast === 'function') fetchWeatherAndForecast();
+        if(typeof fetchKpForecast    === 'function') fetchKpForecast();    // a no-op on the kiosk
+        if(typeof fetchNps           === 'function') fetchNps();
+      }
+    });
+
+    // Window resize → re-center map + redraw the SVG wind/sun overlay +
+    // re-align the radar bottom with the forecast bottom.
+    window.addEventListener('resize', function(){
+      if(IPAD.resizeTimer) clearTimeout(IPAD.resizeTimer);
+      IPAD.resizeTimer = setTimeout(function(){
+        if(RADAR.map) RADAR.map.invalidateSize();
+        drawOverlay();
+        syncRadarToForecast();
+      }, 150);
+    });
+  }
+
+  // Make the right column (7-day + radar) end at the same vertical
+  // point as the left column (hero + forecast). CSS Grid can't
+  // express "match this OTHER cell's bottom", so we measure the
+  // forecast card's bottom and set the radar card's height to
+  // reach there. Re-runs on load, after the first render burst, and
+  // on resize. Cheap (one getBoundingClientRect, one style write).
+  setTimeout(syncRadarToForecast, 600);
+  setTimeout(syncRadarToForecast, 1800);
+  setTimeout(syncRadarToForecast, 4000);
+
+  ipadRelayout();
+  updateNightMode();
+}
+
+/* Parts drawn from measurements of the layout they were drawn in: the
+ * price chart (label spacing, tag headroom, 'homme', the tags' places were
+ * all sized for the phone's 96px chart after a portrait start) and the
+ * warning banner's offset for the +/- and the legend (0 while the banner
+ * is hidden in portrait). Redrawn on every change of layout. */
+function ipadRelayout(){
+  if(NPS_DATA) renderNps(NPS_DATA);
+  renderMapWarning();
+}
+
+function ipadEnterMap(){
+  if(!IPAD.active || !RADAR.map) return;
+  IPAD.mapOn = true;
+
   // Satellite is already the base (initRadar); make the chips say so.
   syncBaseButtons();
 
   // Inject two SVG overlay layers inside the Leaflet map div so they
   // share the same stacking context but never grab touches.
-  // - Persistent particles layer (created once so CSS keyframes don't
-  //   restart on every redraw)
+  // - Persistent particles layer (created once per stay in landscape so
+  //   CSS keyframes don't restart on every redraw)
   // - Map-arrows layer (rebuilt via innerHTML each frame)
   var mapDiv = document.getElementById('radar-map');
   if(mapDiv){
@@ -7139,51 +7605,102 @@ function initIpadEnhancements(){
     }
   }
 
-  // Redraw the SVG every time the map moves / zooms / resizes
-  RADAR.map.on('move zoom viewreset resize load', drawOverlay);
-  setInterval(drawOverlay, 60 * 1000);  // sun position ticks each minute
+  // Redraw the SVG every time the map moves / zooms / resizes. Once only:
+  // a second rotation into landscape must not double the listeners.
+  // drawOverlay() is a no-op while the kiosk is not active.
+  if(!IPAD.mapWired){
+    IPAD.mapWired = true;
+    RADAR.map.on('move zoom viewreset resize load', drawOverlay);
+    setInterval(drawOverlay, 60 * 1000);  // sun position ticks each minute
+  }
 
   // Re-center on Madise at the 200 km default preset so wind streamlines
   // and sunrise/sunset arrows have room to extend without spilling off
   // the map edges (which would happen at the tighter 50 km view).
   ipadPresetView(false);
-  setTimeout(function(){ RADAR.map.invalidateSize(); drawOverlay(); }, 200);
+  setTimeout(function(){ if(RADAR.map) RADAR.map.invalidateSize(); drawOverlay(); }, 200);
   setTimeout(drawOverlay, 1500);
-
-  /* Refresh all fetches when the page becomes visible again (iPad woke
-   * from sleep, user came back to the Safari tab, etc.). setInterval
-   * pauses while the page is hidden, so without this Kurevere and the
-   * other station feeds would stay stale until the next 5-min tick. */
-  document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState === 'visible'){
-      if(typeof fetchKurevere      === 'function') fetchKurevere();
-      if(typeof fetchLaaneNigula   === 'function') fetchLaaneNigula();   // + warnings
-      if(typeof fetchWeatherAndForecast === 'function') fetchWeatherAndForecast();
-      if(typeof fetchKpForecast    === 'function') fetchKpForecast();
-    }
-  });
-
-  // Window resize → re-center map + redraw the SVG wind/sun overlay +
-  // re-align the radar bottom with the forecast bottom.
-  window.addEventListener('resize', function(){
-    if(IPAD.resizeTimer) clearTimeout(IPAD.resizeTimer);
-    IPAD.resizeTimer = setTimeout(function(){
-      if(RADAR.map) RADAR.map.invalidateSize();
-      drawOverlay();
-      syncRadarToForecast();
-    }, 150);
-  });
-
-  // Make the right column (7-day + radar) end at the same vertical
-  // point as the left column (hero + forecast). CSS Grid can't
-  // express "match this OTHER cell's bottom", so we measure the
-  // forecast card's bottom and set the radar card's height to
-  // reach there. Re-runs on load, after the first render burst, and
-  // on resize. Cheap (one getBoundingClientRect, one style write).
-  setTimeout(syncRadarToForecast, 600);
-  setTimeout(syncRadarToForecast, 1800);
-  setTimeout(syncRadarToForecast, 4000);
 }
+
+/* Leaving landscape: undo what the kiosk did to the shared page, so the
+ * portrait (phone) layout gets its own again. The overlays go — their CSS
+ * lives in the landscape query, so in portrait they fell into the map's
+ * flow, and removing the particles stops their 24 animations. The rain
+ * row goes back to the phone's default, the condition line to its header,
+ * the stack loses its measured height, the night dim lifts, and the cards
+ * the kiosk hid (pollen, aurora) are fetched, since they are on screen now.
+ * The map itself stays as it is; Leaflet follows the resize on its own. */
+function ipadLeave(){
+  if(!IPAD.active) return;
+  IPAD.active = false;
+  IPAD.mapOn = false;
+
+  ['map-overlay', 'wind-particle-overlay'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(el && el.parentNode) el.parentNode.removeChild(el);
+  });
+
+  if(typeof setRainMode === 'function') setRainMode('prob');
+
+  var condEl = document.getElementById('wx-cond');
+  var home = IPAD.condHome;
+  if(condEl && home && home.parent){
+    if(home.next && home.next.parentNode === home.parent) home.parent.insertBefore(condEl, home.next);
+    else home.parent.appendChild(condEl);
+  }
+  IPAD.condHome = null;
+
+  var stack = document.querySelector('.ipad-radar-stack');
+  if(stack) stack.style.height = '';
+
+  ipadRelayout();
+  updateNightMode();
+  fetchKioskHiddenFeeds();
+}
+
+/* ─── NIGHT: the kiosk dims itself ─────────────────────────────────────
+ * The screen is always on, and at night it was exactly as bright as at
+ * noon — the satellite map the brightest thing in a dark room. A web page
+ * cannot lower the backlight (Wake Lock, which would at least be the right
+ * API family, is iOS 16.4+), so the content dims instead: from an hour
+ * after sunset until half an hour before sunrise, body.night puts a black
+ * veil at 45 % over the whole kiosk and takes the base map down to 45 %
+ * over the map's black, while the radar frames stay at strength so rain
+ * still stands out. The wind particles stop and the temperature loses its
+ * glow.
+ * The veil is one translucent layer the compositor blends — the cheapest
+ * way on the A8X. filter: brightness() on .app would make WebKit re-filter
+ * the whole app whenever anything in it changed.
+ * The radar loop's own night rest is radarAutoplayAllowed() (sunset + 1 h
+ * to sunrise); this does not touch the loop.
+ * Any touch lifts the dim for NIGHT_WAKE_MS and still reaches what it
+ * touched: the veil takes no pointer events. Kiosk layout only — the tick
+ * re-evaluates it every 30 s. */
+var NIGHT_AFTER_SUNSET_MS   = 60 * 60 * 1000;
+var NIGHT_BEFORE_SUNRISE_MS = 30 * 60 * 1000;
+var NIGHT_WAKE_MS           = 60 * 1000;
+var NIGHT = { wakeUntil: 0, timer: null };
+
+function isNightNow(){
+  if(TODAY_SUNRISE_MS === null || TODAY_SUNSET_MS === null) return false;
+  var now = Date.now();
+  // TODAY_* are the local calendar day's. After midnight, until the next
+  // fetchSunTimes(), they are still yesterday's, whose sunset is past: night.
+  return now >= TODAY_SUNSET_MS + NIGHT_AFTER_SUNSET_MS ||
+         now <  TODAY_SUNRISE_MS - NIGHT_BEFORE_SUNRISE_MS;
+}
+function updateNightMode(){
+  var on = IPAD.active && isNightNow() && Date.now() >= NIGHT.wakeUntil;
+  if(document.body.classList.contains('night') !== on) document.body.classList.toggle('night', on);
+}
+function nightWake(){
+  NIGHT.wakeUntil = Date.now() + NIGHT_WAKE_MS;
+  if(NIGHT.timer) clearTimeout(NIGHT.timer);
+  NIGHT.timer = setTimeout(updateNightMode, NIGHT_WAKE_MS + 50);
+  updateNightMode();
+}
+document.addEventListener('touchstart', nightWake, { passive: true, capture: true });
+document.addEventListener('mousedown', nightWake, true);
 
 function syncRadarToForecast(){
   if(!IPAD.active) return;
