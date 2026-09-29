@@ -3536,7 +3536,14 @@ function calcSunTimes(lat,lng,date){
   var eps=toRad(23.439-0.0000004*n);
   var sinDec=Math.sin(eps)*Math.sin(lam), dec=Math.asin(sinDec);
   var RA=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam));
-  var EoT=toDeg(L*Math.PI/180-RA)*4;
+  /* L is in [0,360) but atan2 gives RA in (−180,180], so from ~23 Sep to
+   * ~21 Mar (L > 180°) the raw difference is ~360° and EoT came out ~1440
+   * min: every sunrise/sunset landed 24 h early (right clock time, wrong
+   * date), which blanked the map's sun disc and made currentSkyText read
+   * the whole winter day as night. Wrap the angle to (−180,180] first. */
+  var dRA=L*Math.PI/180-RA;
+  dRA=Math.atan2(Math.sin(dRA),Math.cos(dRA));
+  var EoT=toDeg(dRA)*4;
   var noon=720-4*lng-EoT, latR=toRad(lat);
   var cosHA=(Math.cos(toRad(90.833))-Math.sin(latR)*Math.sin(dec))/(Math.cos(latR)*Math.cos(dec));
   var HA=toDeg(Math.acos(Math.max(-1,Math.min(1,cosHA))));
@@ -3573,7 +3580,9 @@ function solarPosition(date, lat, lng){
 
 function fetchSunTimes(){
   var now = new Date();
-  var utcNoon = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0));
+  // Noon of the LOCAL calendar day: between local midnight and 02:00/03:00
+  // the UTC date is still yesterday, which would hand back yesterday's times.
+  var utcNoon = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0));
   var sun = calcSunTimes(CONFIG.lat, CONFIG.lng, utcNoon);
   TODAY_SUNRISE_MS = sun.sunrise.getTime();
   TODAY_SUNSET_MS = sun.sunset.getTime();
