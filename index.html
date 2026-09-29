@@ -3466,6 +3466,7 @@ function ageText(ageMin){
     var wd = byId('weekday'); if(wd) wd.textContent = ET_DAYS[d.getDay()];
     var ds = byId('datestamp'); if(ds) ds.textContent = d.getDate() + '. ' + ET_MONTHS[d.getMonth()];
     updateSunCountdown();
+    updateHeroDayNight();   // sunset / sunrise between two weather renders
     updateStaleIndicator();
     updateNpsClock();
     // Defined with the kiosk code further down; the first tick runs before it.
@@ -3691,6 +3692,34 @@ function heroIsDay(cur){
   }
   if(cur && cur.is_day !== null && cur.is_day !== undefined) return cur.is_day === 1;
   return true;
+}
+
+/* The hero's sky as last painted: the current block, its WMO code, rate,
+ * cloud cover and the day/night it was painted for. Set by renderWeather(). */
+var HERO_SKY = null;
+/* The condition word and the hero icon, from ONE set of inputs — the icon
+ * is decided from the same code, rate, cloud cover and day/night as the
+ * word beside it (see heroSkyCode()). */
+function paintHeroSky(s){
+  var condEl = byId('wx-cond');
+  if(condEl) condEl.textContent = currentSkyText(s.cloud, s.precip, s.code, s.isDay);
+  var heroIconEl = byId('wx-cond-icon-big');
+  if(heroIconEl && typeof weatherCodeToSVG === 'function' && (s.code != null || !isNaN(s.cloud))){
+    heroIconEl.innerHTML = weatherCodeToSVG(heroSkyCode(s.code, s.precip, s.cloud, s.isDay), s.isDay);
+  }
+}
+/* Day or night is otherwise only decided when renderWeather() runs, and
+ * with Open-Meteo down the last run can be hours old: a payload painted at
+ * 18:50 still said 'Päikeseline' under a sun at 21:00. The 30-s tick calls
+ * this, and it repaints the word and icon from the same payload the moment
+ * the answer changes — at sunset, at sunrise, or once fetchSunTimes()
+ * replaces the cached is_day. */
+function updateHeroDayNight(){
+  if(!WX_RENDERED || !HERO_SKY) return;
+  var isDay = heroIsDay(HERO_SKY.cur);
+  if(isDay === HERO_SKY.isDay) return;
+  HERO_SKY.isDay = isDay;
+  paintHeroSky(HERO_SKY);
 }
 
 /* ─── Colour of a temperature ─────────────────────────────────────
@@ -4297,9 +4326,10 @@ function renderWeather(data, savedAt){
       tempEl.className = 'temp-big mono ' + tempTone(temp);
     }
 
-    // Condition phrase
-    var condEl = byId('wx-cond');
-    if(condEl) condEl.textContent = currentSkyText(cloud, precip, curCode, isDay);
+    // Condition phrase and hero icon — one painter, which the 30-s tick
+    // reuses when day turns to night between renders (updateHeroDayNight).
+    HERO_SKY = { cur: cur, code: curCode, precip: precip, cloud: cloud, isDay: isDay };
+    paintHeroSky(HERO_SKY);
 
     // Pills
     if(byId('wx-feels')){
@@ -4467,13 +4497,6 @@ function renderWeather(data, savedAt){
                    colorFn: rainBarColor,
                    legend: mode === 'prob' ? RAIN_LEGEND_PROB : RAIN_LEGEND_MM});
       if(next24Code) renderPrecipTypes(next24Code, next24IsDay, next24Mm);
-    }
-
-    // Hero SVG icon — decided from the same code, rate, cloud cover and
-    // day/night as the condition word above it (see heroSkyCode()).
-    var heroIconEl = byId('wx-cond-icon-big');
-    if(heroIconEl && typeof weatherCodeToSVG === 'function' && (curCode != null || !isNaN(cloud))){
-      heroIconEl.innerHTML = weatherCodeToSVG(heroSkyCode(curCode, precip, cloud, isDay), isDay);
     }
 
     LAST_FETCH_MS = savedAt || Date.now();
@@ -6660,6 +6683,13 @@ function hydrateFromCache(){
   if(np) renderNps(np.data);
 }
 showWeatherEmpty(false);   // ghost 7-day tiles until data arrives
+// Sun times BEFORE the cache paint: heroIsDay() falls back to the cached
+// payload's is_day only while they are missing, and a cache saved by day
+// then painted after sunset — with Open-Meteo down, nothing repaints it —
+// kept 'Päikeseline' and a sun into the night. Pure computation; the map
+// overlay it also redraws is typeof-guarded (not defined yet here).
+fetchSunTimes();
+setInterval(fetchSunTimes, 30*60*1000);
 hydrateFromCache();
 
 /* ─── Radar / Satelliit hero button helper ─────────────────────────
@@ -6680,8 +6710,6 @@ function radarScrollTo(mode){
   }, 400);
 }
 
-fetchSunTimes();
-setInterval(fetchSunTimes, 30*60*1000);
 fetchWeatherAndForecast();
 setInterval(fetchWeatherAndForecast, CONFIG.weatherRefreshMs);
 fetchPollen();
