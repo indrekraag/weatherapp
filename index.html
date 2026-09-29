@@ -15,7 +15,12 @@
 /* ─── DESIGN TOKENS ─────────────────────────────────────────
  * Liquid-glass system rebuilt around 3 principles:
  *   1. ONE material — every card uses the same recipe (no per-card overrides)
- *   2. TYPOGRAPHIC HIERARCHY — three sizes, three weights, no exceptions
+ *   2. TYPOGRAPHIC HIERARCHY — one small scale, --t-* below. The kiosk is
+ *      read from the door, about a metre away, so there 14px is the floor
+ *      for anything worth reading; only uppercase labels, chart ticks and
+ *      units go down to 12px, and nothing but the map's attribution is
+ *      smaller. (This line used to promise 'three sizes, no exceptions'
+ *      while the kiosk rendered fourteen, most of them 8–10.5px.)
  *   3. SUBSURFACE LIGHT — colour comes from a single warm/cool blob field
  *      behind the glass; the glass itself is colourless
  * ─────────────────────────────────────────────────────────── */
@@ -36,13 +41,44 @@
   --fg-2: rgba(228, 238, 250, 0.74);   /* secondary labels */
   --fg-3: rgba(220, 220, 222, 0.65);   /* captions, units */
 
-  /* Accents — desaturated. The originals were neon; this is daylight. */
+  /* Accents — desaturated. The originals were neon; this is daylight.
+   * One job per token, even where two share a value:
+   *   --accent  UI emphasis: today's tile, the active chip, the scrub thumb
+   *   --warn    attention: stale data, rain within 3 h, frost caution
+   *   --warm    heat: a temperature of +25° or more
+   *   --cold    a temperature at or below 0° — a real ice blue. It was the
+   *             same amber as --warm, so −12° and +29° looked identical.
+   *   --wind    wind direction glyphs (hero, 24 h row, spark arrows, map)
+   *   --rain    measured / forecast rain amounts (7-day, station chips)
+   *
+   * TEMPERATURE RULE (tempTone() in the script): an ordinary temperature is
+   * plain --fg; ≤ 0° is --cold; ≥ +25° is --warm. The hero, the station
+   * chips, 'Tundub kui' and the 7-day strip all follow it, so colour on a
+   * temperature always means "freezing" or "hot", never just "a number". */
   --accent: #e9a76b;
   --warm:   #e9a76b;
-  --cold:   #e9a76b;
+  --cold:   #8ec5ff;
+  --wind:   #7ec8ff;
+  --rain:   rgba(100, 160, 235, 0.95);
   --ok:     #6db88a;   /* muted green — positive/safe states */
   --warn:   #e9a76b;   /* amber — caution states */
   --bad:    #d4766e;   /* muted coral-red — danger states */
+
+  /* Type scale. The kiosk media query sizes every text from these; the
+   * phone fallback keeps its own older sizes.
+   *   --t-xs  12  uppercase labels, chart ticks, units, the build stamp
+   *   --t-sm  14  captions, sub-lines, secondary values (the kiosk floor)
+   *   --t-md  16  the condition line
+   *   --t-lg  20  tile, pill, station and 7-day values
+   *   --t-xl  28  the clock and the current electricity price
+   *   --t-hero 80 the temperature
+   * Weights: 200 for the hero figure, 500 text, 600 values, 700 labels. */
+  --t-xs: 12px;
+  --t-sm: 14px;
+  --t-md: 16px;
+  --t-lg: 20px;
+  --t-xl: 28px;
+  --t-hero: 80px;
 
   /* Glow — softer, used sparingly */
   --glow-warm: rgba(233, 167, 107, 0.20);
@@ -300,6 +336,10 @@ body {
 .hero-bar-date > span {
   white-space: nowrap;
 }
+/* Grouping wrappers for the kiosk's grid (see the landscape query). On the
+   phone they vanish from the box tree and the children flow as before. */
+.hero-bar-date .hero-bar-when,
+.hero-bar-date .hero-bar-meta { display: contents; }
 .hero-bar-date .weekday {
   font-weight: 600;
   color: rgba(255,255,255,0.92);
@@ -317,15 +357,16 @@ body {
   color: rgba(255,255,255,0.50);
 }
 /* Build stamp — which build is on screen and when it was pushed.
-   Deliberately dimmer (0.34 vs the clock's 0.92) and smaller (0.8em) than
+   Deliberately dimmer (0.50 vs the clock's 0.92) and smaller (0.8em) than
    the live date/time it sits beside: it is a version marker, not a
-   reading, and must never be misread as the current time. Sized in `em`
-   so it keeps its proportion when the iPad rule shrinks .hero-bar-date. */
+   reading, and must never be misread as the current time. 0.50 is as dim
+   as it can go and still pass AA contrast (5:1 on the card; 0.34 gave
+   3.1:1). Sized in `em` on the phone; the kiosk sets it to --t-xs. */
 .hero-bar-date .build-stamp {
   margin-left: 2px;
   font-size: 0.8em;
   font-weight: 500;
-  color: rgba(255,255,255,0.34);
+  color: rgba(255,255,255,0.50);
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
@@ -390,6 +431,7 @@ body {
  * gets a faint amber tint to differentiate it (cache-clearing is a
  * more destructive action than a soft refresh). */
 .hero-refresh-btn {
+  position: relative;
   background: none;
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 7px;
@@ -402,9 +444,30 @@ body {
   justify-content: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  /* No double-tap-to-zoom: ⟲'s confirming second tap must reach the button. */
+  touch-action: manipulation;
   transition: color 0.15s, border-color 0.15s, transform 0.3s;
   flex-shrink: 0;
   padding: 0;
+}
+/* ⟲ armed by a first tap (hardRefreshTap): an amber 'Kinnita?' tab grows
+   leftwards out of the button, over ↻, for three seconds. It is part of the
+   button, so tapping it — or ⟲ again — confirms. */
+.hero-refresh-btn .confirm-label { display: none; }
+.hero-refresh-btn-hard.confirm .confirm-label {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  right: -1px; top: -1px; bottom: -1px;
+  z-index: 1;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: var(--warn);
+  color: #221503;
+  font-family: -apple-system, "SF Pro Text", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .hero-refresh-btn:active {
   color: rgba(255,255,255,0.95);
@@ -416,7 +479,7 @@ body {
   border-color: rgba(233,167,107,0.22);
 }
 .hero-refresh-btn-hard:active {
-  color: #e9a76b;
+  color: var(--warn);
   border-color: rgba(233,167,107,0.55);
 }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -496,10 +559,17 @@ body {
   font-weight: 200;
   letter-spacing: -3px;
   line-height: 0.9;
-  color: var(--warm);
-  text-shadow: 0 0 50px var(--glow-warm);
+  /* Plain by default; colour only for freezing or heat — the temperature
+     rule in the token block (tempTone() sets the class). */
+  color: var(--fg);
+  text-shadow: 0 0 50px var(--glow-cold);
 }
-.temp-big.cold { color: var(--cold); text-shadow: 0 0 50px var(--glow-cold); }
+.temp-big.cold { color: var(--cold); text-shadow: 0 0 50px rgba(142, 197, 255, 0.18); }
+.temp-big.hot  { color: var(--warm); text-shadow: 0 0 50px var(--glow-warm); }
+/* The same rule on the smaller temperatures (stations, 'Tundub kui',
+   7-day). Class rather than inline style, so .station.stale can grey it. */
+.t-cold { color: var(--cold) !important; }
+.t-hot  { color: var(--warm) !important; }
 .temp-big .deg { font-size: 36px; font-weight: 300; opacity: 0.7; vertical-align: top; margin-left: 2px; }
 
 /* No weather rendered yet (.no-data, from the markup until renderWeather()
@@ -656,6 +726,10 @@ body {
   font-size: 10px;
   margin-top: 1px;
 }
+/* The Sadu tile's forward line, 'vihm ~kl 20' (updateRainStart): brighter
+   than a caption, amber once the rain is within RAIN_SOON_H. */
+.hero-readings .metric-sub.rain-ahead { color: var(--fg); font-weight: 600; }
+.hero-readings .metric-sub.rain-soon  { color: var(--warn); font-weight: 600; }
 /* Wind tile in the hero readings grid is a special two-column layout:
  *   [ label / value / puhanguti sub  |  big arrow centered on right ]
  * The arrow is sized large (32px) and vertically centered to read as
@@ -679,7 +753,7 @@ body {
   justify-content: center;
   font-size: 32px;
   line-height: 1;
-  color: var(--cold);
+  color: var(--wind);
   width: 36px;
   height: 36px;
   /* Subtle filled disc behind the arrow so it reads as a compass needle,
@@ -777,7 +851,7 @@ body {
 .wind-arrow {
   display: inline-block;
   font-size: 16px;
-  color: var(--cold);
+  color: var(--wind);
   line-height: 1;
 }
 .metric-value.warm { color: var(--warm); }
@@ -834,8 +908,8 @@ body {
    display is that you trust it at a glance, so a fossil must not be able
    to pass for a current reading — tarktee served one for 105 days. */
 .station.stale { opacity: 0.5; }
-/* The value span carries renderStation()'s inline warm/cold colour, which
-   only !important can outrank — without it just the '°' went grey. */
+/* .station-temp carries renderStation()'s t-cold / t-hot class, which is
+   !important, so only !important with more weight outranks it. */
 .station.stale .station-temp,
 .station.stale .station-temp > span { color: var(--fg-2) !important; }
 /* Sans at 500, not mono bold: in production the bridges make a 2–5 h old
@@ -897,7 +971,11 @@ body {
   color: var(--fg-3);
   text-transform: uppercase;
 }
-.card-header .meta strong { color: var(--cold); font-weight: 600; }
+/* The countdown in the 24 h card header. Plain until rain is close, amber
+   (attention) once it is within RAIN_SOON_H or already falling — see
+   updateRainStart(). */
+.card-header .meta strong { color: var(--fg); font-weight: 600; }
+.card-header .meta strong.soon { color: var(--warn); }
 
 /* ─── HOURLY STRIP ────────────────────────────────────────
  * Horizontal scroll strip. NO scroll-snap (causes iOS capture bug
@@ -1040,10 +1118,12 @@ body {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 10px;
   font-weight: 600;
-  color: rgba(100, 170, 240, 0.60);
+  /* A dry day's '—': plain caption grey (6:1). It was the rain blue at 60%,
+     3.4:1 — and a dry day needs no rain colour. */
+  color: var(--fg-3);
   letter-spacing: 0;
 }
-.day-rain.wet { color: rgba(100, 160, 235, 0.95); }
+.day-rain.wet { color: var(--rain); }
 /* Max wind speed for the day. Same compact 10px mono treatment as rain
  * so the bottom of the tile reads as two stacked metrics: rain ÷ wind.
  * Color picks up the same teal-blue used in the wind sparkline so the
@@ -1422,6 +1502,7 @@ body {
 .rain-mode-btn:hover {
   color: rgba(255,255,255,0.80);
 }
+.rain-mode-btn .lbl-short { display: none; }
 .rain-mode-btn.active {
   background: linear-gradient(180deg, rgba(80,130,220,0.28) 0%, rgba(80,130,220,0.14) 100%);
   color: rgba(255,255,255,0.95);
@@ -1499,10 +1580,11 @@ body {
   white-space: nowrap;
 }
 .metric-spark-axis span.edge {
-  /* Edges (current hour + +24h) intentionally faded — the eye reads them
-   * from context (the "now" bar is already highlighted); the three middle
-   * markers carry the actual scanning value. */
-  opacity: 0.5;
+  /* Edges (current hour + +24h). They used to be faded to half the axis
+   * colour on the theory that the highlighted "now" bar says it anyway —
+   * 2.4:1, unreadable, and on the kiosk this is the only axis the four
+   * charts have. Same colour as the rest now; kept as a hook. */
+  opacity: 1;
 }
 /* Last-marker tweak: the "+24h" label anchors on the right edge of the
  * last bar. translateX(-50%) would push it 50% past the edge, clipping
@@ -1659,7 +1741,7 @@ body {
   font-size: 16px;
   display: inline-block;
   line-height: 1;
-  color: var(--cold);
+  color: var(--wind);
   transition: transform 0.4s ease;
 }
 /* Sub caption — peak info (temp range, max wind, max rain).
@@ -1836,7 +1918,9 @@ body {
   white-space: nowrap;
   transition: opacity 0.25s;
 }
-.radar-time-label .rt-clock { font-weight: 500; color: rgba(255,255,255,0.60); }
+.radar-time-label .rt-clock { font-weight: 500; color: rgba(255,255,255,0.78); }
+/* 0.78, not 0.60: under the older-frame dim below (× 0.62) the clock time
+   still clears AA (4.8:1); at 0.60 it fell to 3.5:1. */
 #radar-card.radar-past .radar-time-label { opacity: 0.62; }
 .radar-time-label.stale .rt-rel { color: var(--warn); }
 .radar-status {
@@ -1893,13 +1977,21 @@ body {
 }
 #radar-card.radar-past #radar-map::after { opacity: 1; }
 
-/* Override Leaflet attribution to match dark theme */
+/* Override Leaflet attribution to match dark theme. 0.62 white clears AA
+   (4.5:1) over the bright satellite tiles, where 0.45 did not. */
 .leaflet-control-attribution {
   background: rgba(0,0,0,0.55) !important;
-  color: rgba(255,255,255,0.45) !important;
+  color: rgba(255,255,255,0.62) !important;
   font-size: 8px !important;
 }
-.leaflet-control-attribution a { color: rgba(255,255,255,0.55) !important; }
+/* The credit stays, the link goes: the 'Leaflet' link had no target, so a
+   stray tap loaded leafletjs.com in the kiosk's only tab and the app — its
+   hourly reload with it — was gone until someone walked over. With pointer
+   events off, a tap lands on the control, which Leaflet keeps to itself. */
+.leaflet-control-attribution a {
+  color: rgba(255,255,255,0.62) !important;
+  pointer-events: none;
+}
 /* Leaflet zoom controls */
 .leaflet-control-zoom a {
   background: rgba(10,10,14,0.82) !important;
@@ -2039,18 +2131,30 @@ body {
    * height ≈ the puhangud (Tuul) forecast row; tune once confirmed. */
   #price-card {
     flex: 0 0 113px;
-    padding: 8px 12px;
+    padding: 6px 14px 5px;
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
-  #price-card .card-header { margin-bottom: 2px; flex-shrink: 0; }
-  #price-card .card-header h2 { font-size: 11px; }
-  #price-card .price-now { font-size: 16px; }
-  #price-card .price-now-label { font-size: 10px; }
-  #price-card .price-chart { flex: 1 1 auto; height: auto; min-height: 0; margin-top: 4px; }
-  #price-card .price-axis { margin-top: 2px; }
+  /* 'Hetkel 12.8 s/kWh' is the card's glance value: --t-xl, beside the
+     title. The chart gives up the height (60 → 52px); its tick labels go
+     9 → 12px, the value tags on the peak and the current bar to 14px, and
+     renderNps() thins the Y labels and adds headroom to suit. */
+  #price-card .card-header { margin-bottom: 0; flex-shrink: 0; align-items: center; }
+  #price-card .card-header h2 { font-size: var(--t-xs); }
+  #price-card .price-now-wrap { gap: 5px; }
+  #price-card .price-now { font-size: var(--t-xl); }
+  #price-card .price-now-label { font-size: var(--t-sm); margin-right: 0; }
+  #price-card .price-unit { font-size: var(--t-xs); }
+  #price-card .price-chart { flex: 1 1 auto; height: auto; min-height: 0; margin-top: 3px; }
+  /* A fixed height, so the chart is the same size before the first render
+     (empty axis) as after it — renderNps() sizes the Y labels from it. */
+  #price-card .price-axis { margin-top: 2px; height: 15px; line-height: 15px; }
+  #price-card .price-gridline > span,
+  #price-card .price-axis > span { font-size: var(--t-xs); color: rgba(255,255,255,0.58); }
+  #price-card .price-axis > span.now { color: rgba(255,255,255,0.92); }
+  #price-card .price-bars > span .bar-val { font-size: var(--t-sm); }
 
   /* Cards we don't want on the iPad kiosk. Phone build untouched. */
   .alert-banner,
@@ -2087,101 +2191,220 @@ body {
   .ipad-left-col::-webkit-scrollbar { width: 4px; }
   .ipad-left-col::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
 
+  /* CARD INSETS — 14px at the sides of every card, so content edges line
+     up down each column: hero and 24 h card at x 25, 7-day strip, map and
+     price chart at x 393. The 24 h, 7-day and price cards had 12px, which
+     put a 2px step at every seam. Vertical padding stays per card: the
+     7-day and price cards have heights the map's size depends on. */
   .glass.hero {
-    padding: 10px 14px 14px;
+    padding: 10px 14px 12px;
     gap: 8px;
     flex-shrink: 0;
   }
 
-  /* Compact hero internals — landscape sidebar is taller but narrower
-   * than the phone. Everything is tuned to fit ~720px vertical (iPad
-   * viewport minus warning bar / Safari URL bar) WITHOUT scrolling. */
-  .hero-bar { padding: 1px 0 6px; margin-bottom: 0; }
-  .hero-bar-date { font-size: 10.5px; }
+  /* TYPE ON THE KIOSK — read from the door, about a metre away. Every size
+     below comes from the --t-* scale in the token block: 14px floor for
+     text, 12px only for uppercase labels, chart ticks and units, 20px for
+     the values in tiles, pills, chips and the 7-day strip, 28px for the
+     clock, 80px for the temperature. Almost everything here used to be
+     8–10.5px, legible to about arm's length.
+     The column's height is fixed, so the room comes out of the 24 h card:
+     one shared hour axis instead of four, no repeat of the wind reading,
+     and shorter bars — the bars give, the text doesn't. */
+
+  /* HERO BAR — the clock is the thing most often glanced at on a wall, so it
+     leads at --t-xl with the date stacked beside it; the data age and the
+     build stamp run underneath. One grid across the whole bar (the wrappers
+     are display:contents), so that line can pass under ↻ ⟲. */
+  .hero-bar {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    column-gap: 10px;
+    row-gap: 3px;
+    align-items: center;
+    padding: 0 0 6px;
+    margin-bottom: 0;
+    font-size: var(--t-sm);
+  }
+  .hero-bar-date { display: contents; }
+  .hero-bar-date .hero-clock {
+    grid-column: 1; grid-row: 1;
+    /* Sans with tabular figures: SF Mono at 28px is 14px wider. */
+    font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-xl);
+    line-height: 1;
+    letter-spacing: 0;
+  }
+  .hero-bar-date .hero-bar-when {
+    grid-column: 2; grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.12;
+    min-width: 0;
+  }
+  .hero-bar-date .hero-bar-when .dot-sep,
+  .hero-bar-date .hero-clock-sep,
+  .hero-bar-date .hero-bar-break { display: none; }
+  .hero-bar-date .hero-bar-meta {
+    grid-column: 1 / -1; grid-row: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 10px;
+    white-space: normal;
+  }
+  .hero-bar-date .hero-bar-meta > span { white-space: nowrap; }
+  .hero-bar-date .wx-age { font-size: var(--t-sm); }
+  .hero-bar-date .build-stamp { font-size: var(--t-xs); margin-left: 0; }
+  /* ↻ and ⟲: 30px boxes 36px apart (22px boxes 6px apart before), each
+     with a 44 × 44 hit area. The ::after belongs to the button, so a tap
+     anywhere on it is a tap on the button, while the box stays small beside
+     the date; the two areas are 22px clear of each other. ⟲ also asks
+     'Kinnita?' first (hardRefreshTap). */
+  .hero-bar-sync { grid-column: 3; grid-row: 1; gap: 36px; margin-right: 1px; }
+  .hero-refresh-btn { width: 30px; height: 30px; font-size: 15px; }
+  .hero-refresh-btn::after {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 44px; height: 44px;
+    margin: -22px 0 0 -22px;
+  }
+  /* While armed the 'Kinnita?' tab covers both boxes (30 + 36 + 30), so ↻
+     isn't left half-hidden beside it. */
+  .hero-refresh-btn-hard.confirm .confirm-label { min-width: 96px; justify-content: center; }
+
   /* (3) The "HETKEILM MADISEL" header row is dropped on the kiosk — the
      label is redundant when the whole screen is one location, the same
      argument that removed VIHMARADAR. Worth 19px. The condition text is
      NOT dropped: initIpadEnhancements() moves #wx-cond into .hero-main so
      it sits under the big temperature, where it reads better anyway. */
   .hero-title { display: none; }
-  .hero-condition { font-size: 9px; }
   /* #wx-cond after its move: row 2 of the .hero-main grid, under the
-     temperature rather than beside the icon. */
+     temperature and across the icon column, in sentence case at --t-md —
+     the only words that say what the sky is doing. It was 9px caps. */
   .hero-main > .hero-condition {
-    grid-column: 1;
-    margin-top: -2px;
-  }
-  /* Data-age and no-data text is read from the door, so it gets the kiosk's
-     14px floor even where its neighbours are still smaller. The failure
-     line spans the icon column too, so 'Ilmaandmed puuduvad · viimati
-     28.09 11:50' stays on one line. */
-  .hero-bar-date .wx-age { font-size: 14px; }
-  .hero.wx-failed .hero-main > .hero-condition {
     grid-column: 1 / -1;
-    font-size: 14px;
-    margin-top: 2px;
+    margin-top: 0;
+    font-size: var(--t-md);
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--fg-2);
+    white-space: nowrap;
   }
+  /* The failure line, 'Ilmaandmed puuduvad · viimati 28.09 11:50', stays at
+     the floor so it fits on one line. */
+  .hero.wx-failed .hero-main > .hero-condition { font-size: var(--t-sm); }
 
   /* (2) Second metric row — see the markup comment. 59px; a whole grid
      row has to go, because hiding one tile of three reclaims nothing. */
   .hero-readings .metric-secondary { display: none; }
-  .hero-main { padding: 0 2px 2px; gap: 8px; }
-  .temp-big { font-size: 52px; line-height: 0.88; }
-  .temp-big .deg { font-size: 22px; }
-  .hero-icon { width: 52px; height: 52px; }
+  .hero-main { padding: 0 2px; gap: 2px 8px; }
+  .temp-big { font-size: var(--t-hero); line-height: 0.88; letter-spacing: -4px; }
+  .temp-big .deg { font-size: 34px; }
+  .hero-icon { width: 60px; height: 60px; }
+  /* minmax(0, 1fr): equal thirds whatever the content — a plain 1fr lets
+     a long value ('puhangud 22.4') widen its own column. */
+  .hero-meta,
+  .hero-readings,
+  .stations { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hero-meta { gap: 5px; }
-  .pill { padding: 5px 8px; gap: 1px; }
-  .pill .pill-label { font-size: 8px; }
-  .pill .pill-value { font-size: 13px; }
-  .hero-readings { gap: 4px; margin-top: 2px; }
-  .hero-readings .metric { padding: 5px 7px; min-height: 48px; gap: 1px; }
-  .hero-readings .metric-value { font-size: 13px; }
-  .hero-readings .metric-value .unit { font-size: 9px; }
-  .hero-readings .metric-head { font-size: 8px; gap: 3px; }
-  .hero-readings .metric-sub { font-size: 9px; margin-top: 0; }
+  .pill { padding: 5px 8px 6px; gap: 1px; }
+  .pill .pill-label { font-size: var(--t-xs); letter-spacing: 0.3px; }
+  .pill .pill-value { font-size: var(--t-lg); line-height: 1.1; }
+  .hero-readings { gap: 4px; margin-top: 0; }
+  .hero-readings .metric { padding: 5px 6px 6px; min-height: 0; gap: 1px; }
+  .hero-readings .metric-value { font-size: var(--t-lg); line-height: 1.1; }
+  .hero-readings .metric-value .unit { font-size: var(--t-xs); }
+  .hero-readings .metric-head { font-size: var(--t-xs); letter-spacing: 0.4px; gap: 4px; }
+  .hero-readings .metric-icon { font-size: var(--t-xs); }
+  .hero-readings .metric-sub { font-size: var(--t-sm); margin-top: 0; white-space: nowrap; }
+  /* Wind tile: the arrow moves from a column of its own to the top-right
+     corner, beside the TUUL label, so the value and 'puhangud 11.8' get the
+     tile's full width at their new size. */
+  .hero-readings .metric.wind-tile { display: flex; position: relative; }
   .hero-readings .metric.wind-tile .wind-arrow {
-    font-size: 22px; width: 26px; height: 26px;
+    position: absolute;
+    top: 4px; right: 5px;
+    font-size: 19px; width: 24px; height: 24px;
   }
-  .stations { margin-top: 6px; padding-top: 8px; gap: 5px; }
+  .stations { margin-top: 0; padding-top: 8px; gap: 5px; }
   /* 4 px sides, not 5: the road line 'tee +11° niiske' needs 95 px. */
-  .station { padding: 6px 4px; gap: 2px; }
-  .station-name { font-size: 9.5px; }
-  .station-temp { font-size: 14px; }
-  .station-sub { font-size: 8.5px; }
+  .station { padding: 5px 4px 6px; gap: 1px; }
+  .station-name { font-size: var(--t-sm); letter-spacing: 0; }
+  .station-temp { font-size: var(--t-lg); }
+  /* '2.8 m/s  0.0 mm': figures at the floor, units at --t-xs and dimmer,
+     no '·' — the three chips repeated 'm/s · mm' in 8.5px. Sans with
+     tabular figures, like the data age: mono would not fit '12.8 m/s' in
+     a 99px chip. */
+  .station-sub {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: 7px;
+    font-family: -apple-system, "SF Pro Text", sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-sm);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  /* Value and unit never part; on a gusty, wet day ('14.2 m/s 12.8 mm')
+     the two pairs take a line each rather than spill out of the chip. */
+  .station-sub .st-pair { white-space: nowrap; }
+  .station-sub .unit { font-size: var(--t-xs); color: var(--fg-3); }
+  .station-sub .sep { display: none; }
   /* Age tag, fetch status and road state are read from the door: kiosk 14px floor. */
   .station-age,
   .station-status,
-  .station-road { font-size: 14px; letter-spacing: 0; }
+  .station-road { font-size: var(--t-sm); letter-spacing: 0; }
 
   /* 7-DAY strip — sits in the RIGHT column only (above the map), so
    * the left sidebar can stretch to the very top of the viewport. */
   .seven-day-card {
     grid-column: 2;
     grid-row: 2;
-    padding: 8px 12px;
+    padding: 8px 14px;
     flex-shrink: 0;
   }
-  .seven-day-card .card-header { margin-bottom: 6px; }
-  .seven-day-card .card-header h2 { font-size: 10px; }
+  .seven-day-card .card-header { margin-bottom: 5px; }
+  .seven-day-card .card-header h2 { font-size: var(--t-xs); }
   .seven-day-card .daily {
     padding: 0;
     margin: 0;
-    gap: 6px;
+    gap: 5px;
     overflow: hidden;            /* 7 tiles fit naturally at this width */
   }
+  /* Same card height as before (the map under it keeps its size), bigger
+     text: the high and low share one line — high at --t-lg, low at the
+     floor — which pays for the date, rain and wind going 9.5–10px → 14px.
+     Sans with tabular figures for the temperatures, so '−12° −18°' still
+     fits the 75px tile. */
   .seven-day-card .day {
     flex: 1 1 0;
     min-width: 0;
-    padding: 6px 4px;
-    gap: 2px;
+    padding: 4px 2px;
+    gap: 1px;
     border-radius: 12px;
   }
-  .seven-day-card .day-name { font-size: 9.5px; }
-  .seven-day-card .day-ico  { font-size: 18px; margin: 1px 0; }
-  .seven-day-card .day-high { font-size: 13px; }
-  .seven-day-card .day-low  { font-size: 10px; }
-  .seven-day-card .day-rain { font-size: 10px; }
-  .seven-day-card .day-wind { font-size: 9.5px; }
+  .seven-day-card .day-name { font-size: var(--t-sm); letter-spacing: 0; line-height: 1.15; }
+  /* 26px, not the inline 28px: the last two pixels of the card's height. */
+  .seven-day-card .day-ico  { margin: 0; width: 26px !important; height: 26px !important; }
+  .seven-day-card .day-temps {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 5px;
+  }
+  .seven-day-card .day-high,
+  .seven-day-card .day-low {
+    font-family: -apple-system, "SF Pro Text", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .seven-day-card .day-high { font-size: var(--t-lg); line-height: 1.1; }
+  .seven-day-card .day-low  { font-size: var(--t-sm); }
+  .seven-day-card .day-rain,
+  .seven-day-card .day-wind { font-size: var(--t-sm); line-height: 1.15; margin-top: 0; }
 
   /* RIGHT COLUMN: radar card fills the stack above the price card */
   #radar-card {
@@ -2306,11 +2529,12 @@ body {
     top: 10px; right: 10px;
     z-index: 500;
     padding: 6px 10px 7px 9px;
-    background: rgba(10,10,14,0.82);
+    /* 0.88, no backdrop blur: the blur re-ran whenever the radar frame
+       under the legend changed; a touch more opacity hides the tiles as
+       well as the blur did. */
+    background: rgba(10,10,14,0.88);
     border: 1px solid rgba(255,255,255,0.10);
     border-radius: 4px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     pointer-events: none;
     font-family: -apple-system, "SF Pro Display", sans-serif;
     color: rgba(255,255,255,0.82);
@@ -2433,19 +2657,27 @@ body {
    *   • Row padding/margin shaved
    *   • Tundub kui row hidden (already a comfort pill in the hero) */
   .forecast-card {
-    padding: 8px 12px;
+    padding: 8px 14px;
     flex-shrink: 0;
   }
   .forecast-card .forecast-row-feels { display: none !important; }
   .forecast-card .metric-spark-legend { display: none !important; }
-  .forecast-card .card-header { margin-bottom: 4px; }
-  .forecast-card .card-header h2 { font-size: 10px; }
-  .forecast-card .card-header .meta { font-size: 9px; }
-  .forecast-card .forecast-row { padding-bottom: 4px; margin-bottom: 4px; gap: 1px; }
-  .forecast-card .forecast-row-head { min-height: 16px; gap: 6px; }
-  .forecast-card .forecast-row-label { font-size: 10px; letter-spacing: 0.8px; }
-  .forecast-card .forecast-row-sub { font-size: 10px; }
-  .forecast-card .forecast-row-val { font-size: 11px; }
+  .forecast-card .card-header { margin-bottom: 3px; }
+  .forecast-card .card-header h2 { font-size: var(--t-xs); }
+  /* 'Saju alguseni: ~2 h 25 min' — sentence case at the floor, not 9px caps. */
+  .forecast-card .card-header .meta {
+    font-size: var(--t-sm);
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--fg-2);
+  }
+  .forecast-card .forecast-row { padding-bottom: 3px; margin-bottom: 3px; gap: 1px; }
+  .forecast-card .forecast-row-head { min-height: 18px; gap: 6px; }
+  .forecast-card .forecast-row-label { font-size: var(--t-xs); letter-spacing: 0.8px; }
+  .forecast-card .forecast-row-sub { font-size: var(--t-sm); }
+  /* TUUL's current reading and arrow are the hero's Tuul tile over again;
+     at 14px they no longer fit beside 'min 0.1 · max 4.5 m/s · kl 14'. */
+  .forecast-card .forecast-row-val { display: none; }
   /* (1) THE BIG ONE. The forecast card used to be natural-height, so it
      ended 83px above the bottom of its column — and because
      syncRadarToForecast() pins the radar stack to THIS card's bottom, the
@@ -2479,16 +2711,55 @@ body {
     margin-top: 2px;
     gap: 1px;
   }
-  .forecast-card .metric-spark-axis { font-size: 8.5px; height: 10px; margin-top: 1px; }
+  /* ONE hour axis for the four charts, under the last (gusts): they share
+     the same width and the same 24 hours, and renderSpark() gives each its
+     own. Three of the four go — 27 labels at 8.5px, and 33px of height the
+     bars get back — and the one left is --t-xs (12px). */
+  .forecast-card .metric-spark-axis { display: none; }
+  .forecast-card .metric-spark-gusts + .metric-spark-axis {
+    display: block;
+    font-size: var(--t-xs);
+    height: 14px;
+    margin-top: 2px;
+    color: rgba(255,255,255,0.62);
+  }
   .forecast-card .metric-spark-dirs { height: 12px; margin-top: 1px; }
   .forecast-card .spark-arrow svg { width: 7px !important; height: 12px !important; }
   .forecast-card .precip-type-row { height: 12px; margin-top: 1px; }
   .forecast-card .precip-type-icon { width: 10px; height: 10px; }
-  .forecast-card .rain-mode-btn { font-size: 8.5px; padding: 2px 6px; }
+  /* '%' / 'mm' instead of TÕENÄOSUS / HULK (the toggle had to fit beside
+     a 14px caption), at 12px. The visible pill stays 18px tall; the ::after
+     reaches 7px above it and 13px below for a 38px hit area — the buttons
+     were 14px tall. Lopsided on purpose: above is the row gap and then the
+     temperature bars, below only the icon row, which takes no taps. */
+  .forecast-card .rain-mode-btn {
+    position: relative;
+    font-size: var(--t-xs);
+    line-height: 14px;
+    letter-spacing: 0.3px;
+    padding: 2px 10px;
+    touch-action: manipulation;
+  }
+  .forecast-card .rain-mode-btn::after {
+    content: '';
+    position: absolute;
+    left: -2px; right: -2px;
+    top: -7px; bottom: -13px;
+  }
+  /* The bars' hover tint and pointer cursor made them tap candidates, and a
+     touch near the toggle's edge was snapped to a bar (Blink's touch
+     adjustment) — for nothing: the only thing a bar had was a hover title,
+     which a touch screen never shows. */
+  .forecast-card .metric-spark > span { pointer-events: none; }
+  .forecast-card .rain-mode-btn .lbl-long { display: none; }
+  .forecast-card .rain-mode-btn .lbl-short { display: inline; text-transform: none; }
+  /* Above the icon row and bars that follow it in the DOM, or they would
+     paint over the lower half of the hit area. */
+  .forecast-card .forecast-row-head .rain-mode-toggle { position: relative; z-index: 3; }
 
   .card-header { margin-bottom: 8px; }
-  .card-header h2 { font-size: 10px; letter-spacing: 1.1px; }
-  .card-header .meta { font-size: 9px; }
+  .card-header h2 { font-size: var(--t-xs); letter-spacing: 1.1px; }
+  .card-header .meta { font-size: var(--t-sm); }
 
   /* The top-of-map forecast overlay used in earlier iterations has been
    * removed — the full phone-style forecast card now lives in the left
@@ -2511,8 +2782,19 @@ body {
   .footer-updated { display: inline; margin: 0 6px 0 0; font-size: 10px; }
   .footer > div[style] { display: none; }     /* hide v1.1 badge */
 
-  /* Refresh buttons in the hero-bar are smaller in landscape */
-  .hero-refresh-btn { width: 22px; height: 22px; font-size: 12px; }
+  /* NO BACKDROP BLUR ON THE KIOSK. Seven backdrop-filter layers covered
+     about 93% of the screen, each re-blurring what sits behind it — under
+     a radar card that animates all day, on an A8X. Behind the cards there is
+     only the soft blob gradient and the surface is 82% opaque, so the blur
+     changed 0.2–0.4% of pixels by more than 2 levels (measured). The grain
+     overlay (.glass::after, a blended feTurbulence) goes too, and so does
+     the Sadu legend's blur (see .precip-legend). The look is the
+     translucent --surface colour, which stays. */
+  .glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .glass::after { display: none; }
 }
 
 /* Even larger displays (e.g. 12.9" iPad / desktop) — slightly wider
@@ -2562,23 +2844,33 @@ body {
                Sits at the top of the hero card as a subtle context strip
                so the date/time travels with "now" weather visually. -->
           <div class="hero-bar">
+            <!-- The two wrapper spans are display:contents on the phone, so
+                 its one-line flow is unchanged; the kiosk lays them out as a
+                 grid — big clock, the date stacked beside it, the age and
+                 build stamp on the line under both. -->
             <div class="hero-bar-date">
-              <span class="weekday" id="weekday">—</span>
-              <span class="dot-sep">·</span>
-              <span class="datestamp" id="datestamp">—</span>
-              <span class="dot-sep">·</span>
+              <span class="hero-bar-when">
+                <span class="weekday" id="weekday">—</span>
+                <span class="dot-sep">·</span>
+                <span class="datestamp" id="datestamp">—</span>
+              </span>
+              <span class="dot-sep hero-clock-sep">·</span>
               <span class="hero-clock mono" id="clock">—</span>
               <span class="hero-bar-break" aria-hidden="true"></span>
-              <!-- How old the hero's weather is — written by
-                   updateWeatherAge(); amber once it is past WX_AGE_WARN_MIN. -->
-              <span class="wx-age" id="wx-age">ilm —</span>
-              <!-- Build stamp: which version is actually on screen. Dimmer
-                   and smaller than the clock on purpose — see the CSS. -->
-              <span class="build-stamp mono" id="build-stamp"></span>
+              <span class="hero-bar-meta">
+                <!-- How old the hero's weather is — written by
+                     updateWeatherAge(); amber once it is past WX_AGE_WARN_MIN. -->
+                <span class="wx-age" id="wx-age">ilm —</span>
+                <!-- Build stamp: which version is actually on screen. Dimmer
+                     and smaller than the clock on purpose — see the CSS. -->
+                <span class="build-stamp mono" id="build-stamp"></span>
+              </span>
             </div>
+            <!-- ⟲ takes two taps (hardRefreshTap): the first shows
+                 'Kinnita?', the second within 3 s clears the caches. -->
             <div class="hero-bar-sync">
               <button class="hero-refresh-btn" id="refresh-btn" title="Uuenda" onclick="manualRefresh()">↻</button>
-              <button class="hero-refresh-btn hero-refresh-btn-hard" id="hard-refresh-btn" title="Tühjenda vahemälu" onclick="hardRefresh()">⟲</button>
+              <button class="hero-refresh-btn hero-refresh-btn-hard" id="hard-refresh-btn" title="Tühjenda vahemälu" aria-label="Tühjenda vahemälu" onclick="hardRefreshTap()">⟲<span class="confirm-label" aria-hidden="true">Kinnita?</span></button>
             </div>
           </div>
 
@@ -2630,7 +2922,7 @@ body {
                 <div class="metric-value mono cold">
                   <span id="wind-now">—</span><span class="unit">m/s</span>
                 </div>
-                <div class="metric-sub" id="wind-sub">puhanguti — m/s</div>
+                <div class="metric-sub" id="wind-sub">puhangud —</div>
               </div>
               <span class="wind-arrow" id="wind-arrow">↑</span>
             </div>
@@ -2676,17 +2968,17 @@ body {
             <div class="station" id="kv-block">
               <div class="station-name">Kurevere</div>
               <div class="station-temp mono"><span id="kv-temp">—</span>°</div>
-              <div class="station-sub mono"><span id="kv-wind">—</span> m/s · <span class="station-precip" id="kv-precip">—</span> mm</div>
+              <div class="station-sub mono"><span class="st-pair"><span id="kv-wind">—</span><span class="unit"> m/s</span></span><span class="sep"> · </span><span class="st-pair"><span class="station-precip" id="kv-precip">—</span><span class="unit"> mm</span></span></div>
             </div>
             <div class="station" id="ln-block">
               <div class="station-name">Lääne-Nig.</div>
               <div class="station-temp mono"><span id="ln-temp">—</span>°</div>
-              <div class="station-sub mono"><span id="ln-wind">—</span> m/s · <span class="station-precip" id="ln-precip">—</span> mm</div>
+              <div class="station-sub mono"><span class="st-pair"><span id="ln-wind">—</span><span class="unit"> m/s</span></span><span class="sep"> · </span><span class="st-pair"><span class="station-precip" id="ln-precip">—</span><span class="unit"> mm</span></span></div>
             </div>
             <div class="station" id="hp-block">
               <div class="station-name">Haapsalu</div>
               <div class="station-temp mono"><span id="hp-temp">—</span>°</div>
-              <div class="station-sub mono"><span id="hp-wind">—</span> m/s · <span class="station-precip" id="hp-precip">—</span> mm</div>
+              <div class="station-sub mono"><span class="st-pair"><span id="hp-wind">—</span><span class="unit"> m/s</span></span><span class="sep"> · </span><span class="st-pair"><span class="station-precip" id="hp-precip">—</span><span class="unit"> mm</span></span></div>
             </div>
           </div>
 
@@ -2736,8 +3028,10 @@ body {
             <div class="forecast-row-head">
               <span class="forecast-row-label">Sadu</span>
               <div class="rain-mode-toggle" role="group" aria-label="Sadu mood">
-                <button type="button" class="rain-mode-btn active" data-mode="prob">tõenäosus</button>
-                <button type="button" class="rain-mode-btn" data-mode="mm">hulk</button>
+                <!-- Long words on the phone, '%' / 'mm' on the kiosk, where
+                     the row also has to fit a 14px caption (see the CSS). -->
+                <button type="button" class="rain-mode-btn active" data-mode="prob" aria-label="tõenäosus"><span class="lbl-long">tõenäosus</span><span class="lbl-short">%</span></button>
+                <button type="button" class="rain-mode-btn" data-mode="mm" aria-label="hulk"><span class="lbl-long">hulk</span><span class="lbl-short">mm</span></button>
               </div>
               <span class="forecast-row-sub" id="rain-sub">—</span>
             </div>
@@ -3075,6 +3369,36 @@ function manualRefresh(){
   fetchLaaneNigula();       // also brings the warnings
 }
 
+/* ⟲ throws away the cached weather and the app-shell cache — the one
+ * control on the kiosk that can make things worse (offline, it wipes the
+ * last good data and reloads into nothing), and it sat 6 px from ↻. So it
+ * takes two taps: the first arms it and shows 'Kinnita?' for
+ * HARD_REFRESH_ARM_MS; a second tap in that window runs hardRefresh(). A
+ * second tap sooner than HARD_REFRESH_MIN_GAP_MS is a bounce or a stray
+ * double tap, not a decision, and is ignored. HANDOFF documents ⟲ as the way
+ * to force a new build onto the iPad — two taps still do that. */
+var HARD_REFRESH_ARM_MS     = 3000;
+var HARD_REFRESH_MIN_GAP_MS = 350;
+var HARD_REFRESH_ARM = { at: 0, timer: null };
+function hardRefreshTap(){
+  var btn = byId('hard-refresh-btn');
+  var now = Date.now();
+  if(HARD_REFRESH_ARM.at){
+    if(now - HARD_REFRESH_ARM.at < HARD_REFRESH_MIN_GAP_MS) return;
+    clearTimeout(HARD_REFRESH_ARM.timer);
+    HARD_REFRESH_ARM.at = 0;
+    if(btn) btn.classList.remove('confirm');
+    hardRefresh();
+    return;
+  }
+  HARD_REFRESH_ARM.at = now;
+  if(btn) btn.classList.add('confirm');
+  HARD_REFRESH_ARM.timer = setTimeout(function(){
+    HARD_REFRESH_ARM.at = 0;
+    if(btn) btn.classList.remove('confirm');
+  }, HARD_REFRESH_ARM_MS);
+}
+
 /* Hard refresh: drops all cached weather data from localStorage, evicts
  * the service-worker app-shell cache, unregisters the worker itself (so
  * the reload goes straight to the network and a fresh sw.js is installed
@@ -3236,6 +3560,29 @@ function heroIsDay(cur){
   }
   if(cur && cur.is_day !== null && cur.is_day !== undefined) return cur.is_day === 1;
   return true;
+}
+
+/* ─── Colour of a temperature ─────────────────────────────────────
+ * The temperature rule from the token block, in one place: 'cold' at or
+ * below 0° (--cold, ice blue), 'hot' from +25° (--warm, amber), '' for
+ * everything in between, which stays plain --fg. Colour on a number then
+ * always says "freezing" or "hot". Before, every temperature was amber —
+ * −12° included — and the 7-day strip was white, so the same kind of number
+ * came in two colours for no reason. */
+var TEMP_COLD_MAX = 0;
+var TEMP_HOT_MIN  = 25;
+function tempTone(t){
+  if(t === null || t === undefined || isNaN(t)) return '';
+  if(t <= TEMP_COLD_MAX) return 'cold';
+  if(t >= TEMP_HOT_MIN) return 'hot';
+  return '';
+}
+/* Set the t-cold / t-hot class on el (keeping its other classes). */
+function setTempTone(el, t){
+  if(!el) return;
+  var tone = tempTone(t);
+  el.classList.toggle('t-cold', tone === 'cold');
+  el.classList.toggle('t-hot', tone === 'hot');
 }
 
 /* ─── Weather condition phrase (Estonian) ─────────────────────────
@@ -3816,7 +4163,7 @@ function renderWeather(data, savedAt){
     var tempEl = byId('wx-temp');
     if(tempEl){
       tempEl.innerHTML = temp + '<span class="deg">°</span>';
-      tempEl.className = 'temp-big mono ' + (temp < 0 ? 'cold' : 'warm');
+      tempEl.className = 'temp-big mono ' + tempTone(temp);
     }
 
     // Condition phrase
@@ -3824,7 +4171,10 @@ function renderWeather(data, savedAt){
     if(condEl) condEl.textContent = currentSkyText(cloud, precip, curCode, isDay);
 
     // Pills
-    if(byId('wx-feels')) byId('wx-feels').textContent = feels;
+    if(byId('wx-feels')){
+      byId('wx-feels').textContent = feels;
+      setTempTone(byId('wx-feels').parentNode, feels);   // number and '°' together
+    }
     if(byId('wx-dew')) byId('wx-dew').textContent = dew;
 
     // Wind — hero tile current reading + forecast card header value
@@ -3839,7 +4189,9 @@ function renderWeather(data, savedAt){
       }
     }
     if(byId('wind-forecast-now')) byId('wind-forecast-now').textContent = wind.toFixed(1);
-    var windSubText = 'puhanguti ' + gust.toFixed(1) + ' m/s';
+    // No unit — the value right above carries 'm/s'. 'puhanguti 11.8 m/s'
+    // is 116px at the kiosk's 14px floor, in a tile with 95px of room.
+    var windSubText = 'puhangud ' + gust.toFixed(1);
     if(byId('wind-sub')) byId('wind-sub').textContent = windSubText;
     var arrowRotation = 'rotate(' + (dir + 180) + 'deg)';
     var wa = byId('wind-arrow'); if(wa) wa.style.transform = arrowRotation;
@@ -4098,6 +4450,8 @@ function renderDaily(daily, hourly){
   if(!strip) return;
   strip.innerHTML = '';
   var ET_DAY_ABBR = ['Püh','Esm','Teis','Kolm','Nelj','Reede','Laup'];
+  // The temperature rule (tempTone) as a class suffix for the high / low.
+  var toneCls = function(t){ var tone = tempTone(t); return tone ? ' t-' + tone : ''; };
   // A cached payload from before midnight starts with a day that is already
   // over (the weather cache is kept up to 24 h). Skip past days so 'Täna'
   // is always today; the payload has 8 days, so 7 are still left.
@@ -4145,8 +4499,8 @@ function renderDaily(daily, hourly){
       '<span class="day-name">' + name + '</span>' +
       '<span class="day-ico" style="font-size:0;line-height:0;width:28px;height:28px;display:block">' + icon + '</span>' +
       '<span class="day-temps">' +
-        '<span class="day-high mono">' + tmax + '°</span>' +
-        '<span class="day-low mono">' + tmin + '°</span>' +
+        '<span class="day-high mono' + toneCls(tmax) + '">' + tmax + '°</span>' +
+        '<span class="day-low mono' + toneCls(tmin) + '">' + tmin + '°</span>' +
       '</span>' +
       rainHtml +
       windHtml;
@@ -4187,20 +4541,32 @@ function renderDailyGhost(){
  * search both ways: the first future slot whose wet/dry state differs from
  * now.
  * ═══════════════════════════════════════════════════════════════ */
+/* Rain this close is "attention": the countdown and the hero tile's line
+ * turn amber (--warn). Within RAIN_TILE_AHEAD_H the hero Sadu tile names the
+ * hour instead of saying 'kuiv' — the umbrella answer where the eye lands
+ * first. It read '0.0 mm/h · kuiv' with rain due in forty minutes, and the
+ * only forward cue was a 9px countdown in the next card. */
+var RAIN_SOON_H       = 3;
+var RAIN_TILE_AHEAD_H = 6;
 function updateRainStart(hourly, rateNow){
   var el = byId('rain-start');
   if(!el) return;
   var labelEl = byId('rain-start-label');
-  var now = Date.now(), raining = rateNow >= RAIN_MIN_MM, change = null;
+  var tileEl = byId('rain-current-sub');
+  var now = Date.now(), raining = rateNow >= RAIN_MIN_MM, change = null, changeIdx = -1;
   for(var i=0;i<hourly.time.length;i++){
     var t = parseLocalIsoFlexible(hourly.time[i]);
     if(!t || t.getTime() <= now) continue;          // slot already over
     var wet = (hourly.precipitation[i] || 0) >= RAIN_MIN_MM;
-    if(wet !== raining){ change = t.getTime() - 3600000; break; }
+    if(wet !== raining){ change = t.getTime() - 3600000; changeIdx = i; break; }
   }
+  var soon = raining || (change !== null && change - now <= RAIN_SOON_H * 3600000);
+  el.classList.toggle('soon', soon);
+  if(tileEl){ tileEl.classList.remove('rain-soon'); tileEl.classList.remove('rain-ahead'); }
   if(raining){
     // The end can only be named if it is still ahead; if the model thinks
     // this very hour is dry, "raining now" is all we can honestly say.
+    // (The tile keeps renderWeather()'s intensity word: 'nõrk sadu' …)
     var endAhead = change !== null && change > now;
     if(labelEl) labelEl.textContent = endAhead ? 'Sajab praegu · lõpp' : 'Sajab praegu';
     el.textContent = endAhead ? '~' + formatTime(new Date(change)) : '';
@@ -4209,6 +4575,15 @@ function updateRainStart(hourly, rateNow){
   if(labelEl) labelEl.textContent = 'Saju alguseni:';
   if(change === null){ el.textContent = '— pole oodata'; return; }
   var diff = change - now;
+  // Hero tile: 'vihm ~kl 20' — the hour the first wet slot begins, which is
+  // all an hourly sum can say (see above). 'lumi' when that hour's code is
+  // snow; 'peagi' when the slot we're in is the wet one.
+  if(tileEl && diff <= RAIN_TILE_AHEAD_H * 3600000){
+    var code = hourly.weathercode ? hourly.weathercode[changeIdx] : null;
+    tileEl.textContent = (isSnowCode(code) ? 'lumi' : 'vihm') +
+      (diff <= 0 ? ' peagi' : ' ~kl ' + pad(new Date(change).getHours()));
+    tileEl.classList.add(soon ? 'rain-soon' : 'rain-ahead');
+  }
   // The slot we're in is forecast wet but nothing is falling yet: the
   // hourly sum can't say when inside the hour it starts.
   if(diff <= 0){ el.textContent = 'alla tunni'; return; }
@@ -4556,7 +4931,10 @@ function renderStation(prefix, vals){
     var el = byId(prefix + '-temp');
     if(el){
       el.textContent = (t >= 0 ? '+' : '') + t.toFixed(1);
-      el.style.color = t < 0 ? 'var(--cold)' : 'var(--warm)';
+      // The temperature rule (tempTone): on the whole .station-temp, so the
+      // '°' matches the number. It was amber above zero and — with --cold
+      // set to the same amber — below it too.
+      setTempTone(el.parentNode, t);
     }
   }
   if(vals.precip !== null && vals.precip !== undefined && !isNaN(vals.precip)){
@@ -4565,7 +4943,7 @@ function renderStation(prefix, vals){
     if(pe){
       pe.textContent = p.toFixed(1);
       // Match the 7-day's .day-rain.wet blue when there's measurable precip
-      pe.style.color = p >= 0.05 ? 'rgba(100, 160, 235, 0.95)' : '';
+      pe.style.color = p >= 0.05 ? 'var(--rain)' : '';
     }
   }
   if(vals.wind !== null && vals.wind !== undefined && !isNaN(vals.wind)){
@@ -5088,11 +5466,19 @@ function renderNps(data){
     var step = maxV <= 10 ? 2 : maxV <= 20 ? 5 : maxV <= 60 ? 10 : 20;
     var top = Math.max(step * 2, Math.ceil(maxV / step) * step);
     // Guarantee headroom above the tallest bar so its value tag isn't clipped.
-    if(maxV > 0.82 * top) top += step;
+    // The tag is a fixed number of pixels (14px text on the kiosk), so the
+    // share of the chart it needs depends on how tall the chart is: 18% of
+    // the phone's 96px, a third of the kiosk's 52px.
+    var chartPx = barsEl.clientHeight || 96;
+    var tagFrac = Math.min(0.45, 17 / chartPx);
+    while(maxV > (1 - tagFrac) * top) top += step;
 
     if(gridEl){
       gridEl.innerHTML = '';
-      for(var y = 0; y <= top; y += step){
+      // Label (and rule) every step only while the labels are at least 15px
+      // apart; on the kiosk's short chart 12px labels would otherwise stack.
+      var every = Math.max(1, Math.ceil(15 / (chartPx * step / top)));
+      for(var y = 0; y <= top; y += step * every){
         var line = document.createElement('div');
         line.className = 'price-gridline' + (y === 0 ? ' zero' : '');
         line.style.bottom = (y / top * 100) + '%';
@@ -5444,15 +5830,22 @@ function windBarColor(ms){
   return rgbaStr(stops[stops.length-1].c);
 }
 
-/* Rain / probability color stops */
+/* Rain / probability color stops.
+ * The mm stops are light enough that every wet bar stands at 3:1 or more
+ * against the card (WCAG 1.4.11), from the top of the bar to its base (see
+ * RAIN_BAR_FADE). The old ramp ran from mid blue through dark violet, which
+ * the dark card swallowed: a 1.1 mm/h bar measured 2.3:1, a 0.4 mm/h one
+ * 2.2:1, so the rain row looked emptier than the forecast was. Same order of
+ * hues (blue → violet → purple → red), lifted; light rain is the 7-day's wet
+ * blue. Dry hours keep their faint 0.20. */
 var RAIN_STOPS_MM = [
   { v:  0,   c: [ 80, 140, 220, 0.20] }, /* dry — near-transparent blue  */
-  { v:  0.1, c: [ 70, 130, 215, 0.55] }, /* trace / drizzle              */
-  { v:  0.5, c: [ 55, 105, 210, 0.75] }, /* light rain — medium blue     */
-  { v:  2,   c: [ 90,  65, 195, 0.88] }, /* moderate — blue-violet       */
-  { v:  5,   c: [140,  45, 175, 0.95] }, /* heavy — purple               */
-  { v: 10,   c: [185,  35, 100, 1.00] }, /* very heavy — purple-red      */
-  { v: 20,   c: [200,  35,  50, 1.00] }, /* extreme — red                */
+  { v:  0.1, c: [110, 170, 240, 0.90] }, /* trace / drizzle              */
+  { v:  0.5, c: [100, 160, 235, 0.95] }, /* light rain — the 7-day blue  */
+  { v:  2,   c: [140, 130, 240, 1.00] }, /* moderate — blue-violet       */
+  { v:  5,   c: [185, 110, 230, 1.00] }, /* heavy — purple               */
+  { v: 10,   c: [235,  95, 150, 1.00] }, /* very heavy — purple-red      */
+  { v: 20,   c: [240,  70,  70, 1.00] }, /* extreme — red                */
 ];
 
 /* Probability is a LIKELIHOOD scale, not an intensity one, and it needs
@@ -5579,14 +5972,16 @@ var RAIN_LEGEND_PROB = (function(){
     })
   };
 })();
+/* Built from RAIN_STOPS_MM, like the probability legend, so recolouring the
+ * stops can't leave the phone's key behind. Positions are the ticks' (the
+ * scale is not linear in mm/h); 0.1 sits a fifth of the way to 0.5. */
 var RAIN_LEGEND_MM = {
-  gradient: 'linear-gradient(90deg,' +
-    'rgba(80,140,220,0.25)  0%,' +
-    'rgba(55,105,210,0.8)  20%,' +
-    'rgba(90,65,195,0.9)   40%,' +
-    'rgba(140,45,175,0.97) 60%,' +
-    'rgba(185,35,100,1)    80%,' +
-    'rgba(200,35,50,1)    100%)',
+  gradient: (function(){
+    var POS = { 0: 0, 0.1: 4, 0.5: 20, 2: 40, 5: 60, 10: 80, 20: 100 };
+    return 'linear-gradient(90deg,' + RAIN_STOPS_MM.map(function(s){
+      return rgbaStr(s.c) + ' ' + POS[s.v] + '%';
+    }).join(',') + ')';
+  })(),
   ticks: [
     {pct:  0, label:'0'},
     {pct: 20, label:'0.5'},
@@ -5598,6 +5993,12 @@ var RAIN_LEGEND_MM = {
 };
 
 var SPARK_RAIN_DATA = { prob: [], mm: [] };
+
+/* How far a bar's colour fades from its top to its base: to 22% alpha for
+ * most charts (the signal-strength look), but only to 72% for rain amounts,
+ * so the base of a wet bar still clears 3:1 against the card — at 22% the
+ * lower half of every rain bar dissolved into it. */
+var RAIN_BAR_FADE = 0.72;
 
 /* niceMax — round a data maximum UP to a clean scale ceiling.
  * Used by the sparkline y-axis so labels read "8 m/s" not "7.3 m/s".
@@ -5672,8 +6073,9 @@ function renderSpark(elId, data, opts){
     if(i === 0) bar.className = 'now';
     var topColor = opts.colorFn ? opts.colorFn(v, unit) : null;
     if(topColor){
+      var fade = unit === 'mm/h' ? RAIN_BAR_FADE : 0.22;
       var baseColor = topColor.replace(/[\d.]+\)$/, function(m){
-        return (parseFloat(m) * 0.22).toFixed(2) + ')';
+        return (parseFloat(m) * fade).toFixed(2) + ')';
       });
       bar.style.background = 'linear-gradient(180deg, ' + topColor + ' 0%, ' + baseColor + ' 100%)';
     }
