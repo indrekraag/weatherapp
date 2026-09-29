@@ -329,6 +329,21 @@ body {
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
+/* Line 2 of the bar: the weather data's age, then the build stamp. The
+   zero-height break forces the new line, so the date line never reflows
+   when the age text grows from 'ilm 11:35' to 'ilm 11:35 · 2 t vana'. */
+.hero-bar-date .hero-bar-break { flex-basis: 100%; height: 0; }
+/* When the hero's numbers were fetched (LAST_FETCH_MS). Quiet while fresh —
+   it only confirms the feed is alive next to a clock that always ticks —
+   and amber, with the age spelled out, once the last good fetch is older
+   than WX_AGE_WARN_MIN. Sans with tabular figures: mono would not fit the
+   stale text and the build stamp on one line in the kiosk's left column. */
+.hero-bar-date .wx-age {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,0.55);
+}
+.hero-bar-date .wx-age.old { color: var(--warn); font-weight: 600; }
 
 .hero-bar-sync {
   display: flex;
@@ -483,6 +498,48 @@ body {
 }
 .temp-big.cold { color: var(--cold); text-shadow: 0 0 50px var(--glow-cold); }
 .temp-big .deg { font-size: 36px; font-weight: 300; opacity: 0.7; vertical-align: top; margin-left: 2px; }
+
+/* No weather rendered yet (.no-data, from the markup until renderWeather()
+   succeeds): dashes in neutral grey, no icon, no wind arrows — nothing that
+   could pass for a reading. .wx-failed adds the amber 'Ilmaandmed puuduvad'
+   line once a fetch has failed with nothing to show. */
+.hero.no-data .temp-big,
+.hero.no-data .pill-value,
+.hero.no-data .metric-value { color: var(--fg-3); text-shadow: none; }
+.hero.no-data .wind-arrow,
+.forecast-card.no-data .wind-arrow { visibility: hidden; }
+.hero.wx-failed .hero-condition {
+  color: var(--warn);
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* Cached weather past WX_AGE_DIM_MIN: the same treatment a stale station
+   chip gets, so an old headline can't pass for the current one. The age
+   itself is spelled out in the hero bar (.wx-age.old). */
+.hero.wx-stale .hero-main,
+.hero.wx-stale .hero-meta,
+.hero.wx-stale .hero-readings { opacity: 0.5; }
+.hero.wx-stale .temp-big { color: var(--fg-2); text-shadow: none; }
+
+/* Quiet "no data" line for a card whose feed is down, centred over the card
+   body. The body keeps its size underneath (ghost 7-day tiles, the forecast
+   card's flex rows, the price card's fixed height), so an outage never
+   reflows the kiosk columns or resizes the map. Shown only when it has text.
+   The .glass > .card-empty form outranks the .glass > * relative positioning. */
+.card-empty,
+.glass > .card-empty {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-2);
+  pointer-events: none;
+}
+.card-empty:empty { display: none; }
+.day.ghost { visibility: hidden; }
 
 .hero-icon {
   width: 80px; height: 80px;
@@ -1980,6 +2037,16 @@ body {
     grid-column: 1;
     margin-top: -2px;
   }
+  /* Data-age and no-data text is read from the door, so it gets the kiosk's
+     14px floor even where its neighbours are still smaller. The failure
+     line spans the icon column too, so 'Ilmaandmed puuduvad · viimati
+     28.09 11:50' stays on one line. */
+  .hero-bar-date .wx-age { font-size: 14px; }
+  .hero.wx-failed .hero-main > .hero-condition {
+    grid-column: 1 / -1;
+    font-size: 14px;
+    margin-top: 2px;
+  }
 
   /* (2) Second metric row — see the markup comment. 59px; a whole grid
      row has to go, because hiding one tile of three reclaims nothing. */
@@ -2330,17 +2397,21 @@ body {
         <div class="ipad-left-col">
 
         <!-- HERO -->
-        <div class="glass hero">
+        <div class="glass hero no-data">
           <!-- Hero-bar: date · time · sync. Folded in from the old topbar.
                Sits at the top of the hero card as a subtle context strip
                so the date/time travels with "now" weather visually. -->
           <div class="hero-bar">
             <div class="hero-bar-date">
-              <span class="weekday" id="weekday">Teisipäev</span>
+              <span class="weekday" id="weekday">—</span>
               <span class="dot-sep">·</span>
-              <span class="datestamp" id="datestamp">19. mai</span>
+              <span class="datestamp" id="datestamp">—</span>
               <span class="dot-sep">·</span>
-              <span class="hero-clock mono" id="clock">14:32</span>
+              <span class="hero-clock mono" id="clock">—</span>
+              <span class="hero-bar-break" aria-hidden="true"></span>
+              <!-- How old the hero's weather is — written by
+                   updateWeatherAge(); amber once it is past WX_AGE_WARN_MIN. -->
+              <span class="wx-age" id="wx-age">ilm —</span>
               <!-- Build stamp: which version is actually on screen. Dimmer
                    and smaller than the clock on purpose — see the CSS. -->
               <span class="build-stamp mono" id="build-stamp"></span>
@@ -2353,39 +2424,16 @@ body {
 
           <div class="hero-title">
             <h2>Hetkeilm madisel</h2>
-            <span class="hero-condition" id="wx-cond">Pilves selgimistega</span>
+            <span class="hero-condition" id="wx-cond">—</span>
           </div>
 
           <div class="hero-main">
-            <div class="temp-big mono warm" id="wx-temp">14<span class="deg">°</span></div>
-            <div class="hero-icon" id="wx-cond-icon-big">
-              <!-- Partly sunny SVG -->
-              <svg viewBox="0 0 64 64" aria-hidden="true">
-                <defs>
-                  <radialGradient id="sun-grad" cx="35%" cy="35%">
-                    <stop offset="0%" stop-color="#ffd58a"/>
-                    <stop offset="100%" stop-color="#ff9a3e"/>
-                  </radialGradient>
-                  <linearGradient id="cloud-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stop-color="#e8f1ff"/>
-                    <stop offset="100%" stop-color="#a8c3e0"/>
-                  </linearGradient>
-                </defs>
-                <circle cx="24" cy="22" r="11" fill="url(#sun-grad)"/>
-                <g stroke="#ffb86b" stroke-width="2" stroke-linecap="round" opacity="0.7">
-                  <line x1="24" y1="3"  x2="24" y2="8"/>
-                  <line x1="24" y1="36" x2="24" y2="41"/>
-                  <line x1="5"  y1="22" x2="10" y2="22"/>
-                  <line x1="38" y1="22" x2="43" y2="22"/>
-                  <line x1="10" y1="8"  x2="14" y2="12"/>
-                  <line x1="34" y1="32" x2="38" y2="36"/>
-                  <line x1="38" y1="8"  x2="34" y2="12"/>
-                  <line x1="14" y1="32" x2="10" y2="36"/>
-                </g>
-                <path d="M22 44 Q22 36 30 36 Q34 30 42 32 Q52 30 54 40 Q60 42 58 50 Q56 56 50 56 L26 56 Q18 56 18 50 Q18 44 22 44 Z"
-                      fill="url(#cloud-grad)" stroke="rgba(0,0,0,0.15)" stroke-width="0.6"/>
-              </svg>
-            </div>
+            <!-- Dashes and an empty icon slot until renderWeather() has real
+                 data. These used to be mock-up values (14°, partly sunny,
+                 Pilves selgimistega…), which a failed fetch left on screen
+                 as if they were live. -->
+            <div class="temp-big mono" id="wx-temp">—<span class="deg">°</span></div>
+            <div class="hero-icon" id="wx-cond-icon-big"></div>
           </div>
 
           <div class="hero-meta">
@@ -2398,15 +2446,15 @@ body {
                    Kastepunkt  derived dew point from current temp/humidity         -->
             <div class="pill">
               <div class="pill-label">Tundub kui</div>
-              <div class="pill-value mono"><span id="wx-feels">12</span>°</div>
+              <div class="pill-value mono"><span id="wx-feels">—</span>°</div>
             </div>
             <div class="pill">
               <div class="pill-label">Öökülm</div>
-              <div class="pill-value mono" id="frost-min">+6°</div>
+              <div class="pill-value mono" id="frost-min">—</div>
             </div>
             <div class="pill">
               <div class="pill-label">Kastepunkt</div>
-              <div class="pill-value mono"><span id="wx-dew">9</span>°</div>
+              <div class="pill-value mono"><span id="wx-dew">—</span>°</div>
             </div>
           </div>
 
@@ -2429,9 +2477,9 @@ body {
             <div class="metric">
               <div class="metric-head"><span class="metric-icon">◌</span>Sadu</div>
               <div class="metric-value mono">
-                <span id="rain-now">0.0</span><span class="unit">mm/h</span>
+                <span id="rain-now">—</span><span class="unit">mm/h</span>
               </div>
-              <div class="metric-sub" id="rain-current-sub">parasjagu</div>
+              <div class="metric-sub" id="rain-current-sub">—</div>
             </div>
             <div class="metric">
               <div class="metric-head"><span class="metric-icon">◐</span>Õhurõhk</div>
@@ -2494,7 +2542,10 @@ body {
              Three stacked bar rows (temp / rain / wind) sharing one time
              axis. No horizontal scrolling — all 24 bars fixed-width.
              Öökülm moved up to the comfort-pills row in Hetkeilm. -->
-        <div class="glass card forecast-card">
+        <div class="glass card forecast-card no-data">
+          <!-- 'Prognoos puudub' while the weather feed is down with nothing
+               rendered — see showWeatherEmpty(). -->
+          <div class="card-empty" id="forecast-empty"></div>
           <div class="card-header">
             <h2>Täna · 24h</h2>
             <span class="meta"><span id="rain-start-label">Saju alguseni:</span> <strong id="rain-start" class="mono">—</strong></span>
@@ -2564,7 +2615,8 @@ body {
         </div> <!-- /.ipad-left-col -->
 
         <!-- 7-DAY -->
-        <div class="glass card seven-day-card">
+        <div class="glass card seven-day-card no-data">
+          <div class="card-empty" id="daily-empty"></div>
           <div class="card-header">
             <h2>7 päeva prognoos</h2>
           </div>
@@ -2738,6 +2790,8 @@ body {
           <div class="price-chart">
             <div class="price-grid" id="price-grid"></div>
             <div class="price-bars" id="price-spark" aria-hidden="true"></div>
+            <!-- 'Hinnad puuduvad' when there is nothing to chart — showNpsEmpty() -->
+            <div class="card-empty" id="price-empty"></div>
           </div>
           <div class="price-axis" id="price-axis"></div>
         </div>
@@ -2789,12 +2843,30 @@ var CONFIG = { lat:58.81627, lng:23.74447, label:'Madise', weatherRefreshMs:5*60
 var TODAY_SUNRISE_MS = null, TODAY_SUNSET_MS = null;
 var TODAY_SUNRISE_AZ = null, TODAY_SUNSET_AZ = null;
 var LAST_FETCH_MS = null;
+var WX_RENDERED = false;       // renderWeather() has succeeded at least once
+var STATION_OBS = {};          // chip prefix → { ms, force } — see setStationAge()
 var WX_UV_FROM_EMHI = false;
 
 function byId(id){ return document.getElementById(id); }
 function pad(n){ return n < 10 ? '0' + n : '' + n; }
 function round1(n){ return Math.round(n * 10) / 10; }
 function formatTime(d){ return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+
+/* '11:50' for a time today, '28.09 11:50' for any other day — a bare
+   HH:MM from yesterday would read as this morning. */
+function stampText(ms){
+  var d = new Date(ms), now = new Date();
+  var sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+             && d.getDate() === now.getDate();
+  return (sameDay ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ') + formatTime(d);
+}
+/* '40 min vana' / '5 t vana' / '2 p vana' — shared by the hero bar and the
+   station chips so every age on the kiosk is spelled the same way. */
+function ageText(ageMin){
+  return ageMin < 60   ? Math.round(ageMin) + ' min vana'
+       : ageMin < 1440 ? Math.round(ageMin / 60) + ' t vana'
+                       : Math.round(ageMin / 1440) + ' p vana';
+}
 
 /* ─── Clock + Estonian weekday/date in hero-bar ──────────────────── */
 (function(){
@@ -2858,7 +2930,36 @@ function hardRefresh(){
   } catch(e){ done(); }
 }
 
+/* ─── Weather data age in the hero bar ─────────────────────────────
+ * #last-updated below lives in the footer, which the kiosk hides, so for
+ * months nothing on the wall said how old the weather was: a cache hours
+ * old rendered next to a clock that kept ticking. #wx-age is the visible
+ * version. Past WX_AGE_WARN_MIN (nine missed 5-min fetches) it turns amber
+ * and spells out the age; past WX_AGE_DIM_MIN the hero readings are dimmed
+ * as well. The 24 h and 7-day cards are forecasts and stay as they are. */
+var WX_AGE_WARN_MIN = 45;
+var WX_AGE_DIM_MIN  = 120;
+function updateWeatherAge(){
+  var el = byId('wx-age');
+  var hero = document.querySelector('.glass.hero');
+  if(!el) return;
+  if(!WX_RENDERED || !LAST_FETCH_MS){
+    el.textContent = 'ilm —';
+    el.className = 'wx-age';
+    return;
+  }
+  var ageMin = (Date.now() - LAST_FETCH_MS) / 60000;
+  var old = ageMin > WX_AGE_WARN_MIN;
+  el.textContent = 'ilm ' + stampText(LAST_FETCH_MS) + (old ? ' · ' + ageText(ageMin) : '');
+  el.className = 'wx-age' + (old ? ' old' : '');
+  if(hero){
+    if(ageMin > WX_AGE_DIM_MIN) hero.classList.add('wx-stale');
+    else hero.classList.remove('wx-stale');
+  }
+}
+
 function updateStaleIndicator(){
+  updateWeatherAge();
   if(!LAST_FETCH_MS) return;
   var el = byId('last-updated');
   if(!el) return;
@@ -2874,17 +2975,30 @@ function updateStaleIndicator(){
 
 /* ─── localStorage cache (6 h max age) ──────────────────────────── */
 var CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+/* The weather payload is kept longer. Past 6 h the hero used to fall back
+   to its markup, which is how an Open-Meteo outage ended up showing mock
+   values as live; now a day-old forecast renders under an amber age badge
+   (updateWeatherAge) instead. Past a day the 'current' block says nothing
+   useful about now, so the hero shows its no-data state with 'viimati'. */
+var WX_CACHE_KEEP_MS = 24 * 60 * 60 * 1000;
 function saveCache(key, data){
   try { localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), data: data })); } catch(e){}
 }
-function loadCache(key){
+function loadCache(key, maxAgeMs){
   try {
     var raw = localStorage.getItem(key);
     if(!raw) return null;
     var parsed = JSON.parse(raw);
     if(!parsed || !parsed.savedAt) return null;
-    if(Date.now() - parsed.savedAt > CACHE_MAX_AGE_MS) return null;
+    if(Date.now() - parsed.savedAt > (maxAgeMs || CACHE_MAX_AGE_MS)) return null;
     return parsed;
+  } catch(e){ return null; }
+}
+/* When a cache entry was saved, however old — for 'viimati HH:MM'. */
+function cacheSavedAt(key){
+  try {
+    var parsed = JSON.parse(localStorage.getItem(key));
+    return parsed && parsed.savedAt ? parsed.savedAt : null;
   } catch(e){ return null; }
 }
 
@@ -3483,13 +3597,18 @@ function renderWeather(data, savedAt){
     }
 
     LAST_FETCH_MS = savedAt || Date.now();
+    WX_RENDERED = true;
+    clearWeatherEmpty();
     updateStaleIndicator();
 
     // iPad map overlay — push live wind into the SVG that's drawn on top
     // of the radar tiles. No-op on phone (the function only exists when
     // the iPad enhancements are loaded). */
     if(typeof updateWindOverlay === 'function') updateWindOverlay(dir, wind, gust);
-  }catch(e){ console.error('renderWeather error:', e); }
+  }catch(e){
+    console.error('renderWeather error:', e);
+    if(!WX_RENDERED) showWeatherEmpty(true);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3629,6 +3748,25 @@ function renderDaily(daily, hourly){
     strip.appendChild(el);
   }
 }
+/* Seven invisible tiles with the real tile's structure, so an empty 7-day
+   card keeps its height — and the radar under it its size — instead of
+   collapsing to its header (the map grew 395 → 507 px during an outage).
+   renderDaily() replaces them. */
+function renderDailyGhost(){
+  var strip = byId('daily-strip');
+  if(!strip) return;
+  var html = '';
+  for(var i = 0; i < 7; i++){
+    html += '<div class="day ghost" aria-hidden="true">' +
+      '<span class="day-name">—</span>' +
+      '<span class="day-ico" style="font-size:0;line-height:0;width:28px;height:28px;display:block"></span>' +
+      '<span class="day-temps"><span class="day-high mono">—</span><span class="day-low mono">—</span></span>' +
+      '<span class="day-rain">—</span>' +
+      '<span class="day-wind">—</span>' +
+    '</div>';
+  }
+  strip.innerHTML = html;
+}
 
 /* ═══════════════════════════════════════════════════════════════
  * RENDER — Saju alguseni countdown
@@ -3696,16 +3834,52 @@ function fetchWeatherAndForecast(){
   xhr.open('GET', url, true);
   xhr.timeout = 10000;
   xhr.onload = function(){
-    if(xhr.status !== 200){ console.warn('weather HTTP', xhr.status); return; }
+    if(xhr.status !== 200){ console.warn('weather HTTP', xhr.status); showWeatherEmpty(true); return; }
     try{
       var data = JSON.parse(xhr.responseText);
       saveCache('wx.weather', data);
       renderWeather(data);
-    }catch(e){ console.warn('weather parse error', e); }
+    }catch(e){ console.warn('weather parse error', e); showWeatherEmpty(true); }
   };
-  xhr.onerror   = function(){ console.warn('weather network error'); };
-  xhr.ontimeout = function(){ console.warn('weather timeout'); };
+  xhr.onerror   = function(){ console.warn('weather network error'); showWeatherEmpty(true); };
+  xhr.ontimeout = function(){ console.warn('weather timeout'); showWeatherEmpty(true); };
   xhr.send();
+}
+
+/* ─── Weather empty state ──────────────────────────────────────────
+ * The hero, the 24 h card and the 7-day strip all come from this one
+ * payload, so they share one empty state. The markup starts them in
+ * .no-data (dashes, no icon, no arrows); renderWeather() clears it the first
+ * time it succeeds and it never comes back — from then on an outage shows
+ * the last good data under an age badge instead (updateWeatherAge). If a
+ * fetch fails before anything has rendered, say so rather than wait
+ * silently; 'viimati' names the newest cache we had, even one too old to
+ * use. showWeatherEmpty(false) is the quiet loading state. No-op once
+ * weather has rendered. */
+var WX_EMPTY_CARDS = ['.glass.hero', '.forecast-card', '.seven-day-card'];
+function showWeatherEmpty(failed){
+  if(WX_RENDERED) return;
+  WX_EMPTY_CARDS.forEach(function(sel){
+    var el = document.querySelector(sel);
+    if(el) el.classList.add('no-data');
+  });
+  renderDailyGhost();
+  if(!failed) return;
+  var hero = document.querySelector('.glass.hero');
+  if(hero) hero.classList.add('wx-failed');
+  var savedAt = cacheSavedAt('wx.weather');
+  var cond = byId('wx-cond');
+  if(cond) cond.textContent = 'Ilmaandmed puuduvad' + (savedAt ? ' · viimati ' + stampText(savedAt) : '');
+  if(byId('forecast-empty')) byId('forecast-empty').textContent = 'Prognoos puudub';
+  if(byId('daily-empty')) byId('daily-empty').textContent = 'Prognoos puudub';
+}
+function clearWeatherEmpty(){
+  WX_EMPTY_CARDS.forEach(function(sel){
+    var el = document.querySelector(sel);
+    if(el){ el.classList.remove('no-data'); el.classList.remove('wx-failed'); }
+  });
+  if(byId('forecast-empty')) byId('forecast-empty').textContent = '';
+  if(byId('daily-empty')) byId('daily-empty').textContent = '';
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -4342,14 +4516,29 @@ function fetchNpsFrom(url, onFail){
   xhr.send();
 }
 function fetchNps(){
-  fetchNpsFrom(NPS_LOCAL_URL, function(){ fetchNpsFrom(NPS_REMOTE_URL); });
+  fetchNpsFrom(NPS_LOCAL_URL, function(){
+    fetchNpsFrom(NPS_REMOTE_URL, function(){ if(!NPS_RENDERED) showNpsEmpty(); });
+  });
+}
+/* The card has a fixed height on the kiosk, so an empty one kept its size
+   but read as broken: a blank chart under 'Hetkel: —'. Say why instead, and
+   clear bars left over from an earlier render so an expired chart can't
+   linger. A failed fetch only blanks the card if nothing was ever drawn. */
+var NPS_RENDERED = false;
+function showNpsEmpty(){
+  ['price-spark', 'price-grid', 'price-axis'].forEach(function(id){
+    if(byId(id)) byId(id).innerHTML = '';
+  });
+  var nowEl = byId('price-now');
+  if(nowEl){ nowEl.textContent = '—'; nowEl.style.color = ''; }
+  if(byId('price-empty')) byId('price-empty').textContent = 'Hinnad puuduvad';
 }
 function renderNps(data){
   try{
     var barsEl = byId('price-spark'), gridEl = byId('price-grid'), axisEl = byId('price-axis');
     if(!barsEl) return;
     var prices = (data && data.prices) || [];
-    if(!prices.length) return;
+    if(!prices.length){ showNpsEmpty(); return; }
     if(typeof data.vat_pct === 'number') NPS_VAT_PCT = data.vat_pct;
     var byTs = {};
     prices.forEach(function(p){ byTs[p.ts] = p.eur_mwh; });
@@ -4366,7 +4555,9 @@ function renderNps(data){
       if(eur === undefined){ if(d.getTime() < nowHourMs) continue; break; }
       items.push({ date: d, snt: priceSnt(eur), isNow: d.getTime() === nowHourMs, isPast: d.getTime() < nowHourMs });
     }
-    if(items.length < 2) return;
+    if(items.length < 2){ showNpsEmpty(); return; }
+    NPS_RENDERED = true;
+    if(byId('price-empty')) byId('price-empty').textContent = '';
     // Indices of the highest / lowest visible bars (for value tags).
     var maxIdx = 0, minIdx = 0;
     items.forEach(function(x, i){
@@ -5142,7 +5333,7 @@ function setRainMode(mode){
  * Startup: hydrate from cache then fetch live
  * ═══════════════════════════════════════════════════════════════ */
 function hydrateFromCache(){
-  var w = loadCache('wx.weather');
+  var w = loadCache('wx.weather', WX_CACHE_KEEP_MS);
   if(w) renderWeather(w.data, w.savedAt);
   var p = loadCache('wx.pollen');
   if(p) renderPollen(p.data);
@@ -5159,6 +5350,7 @@ function hydrateFromCache(){
   var np = loadCache('wx.nps');
   if(np) renderNps(np.data);
 }
+showWeatherEmpty(false);   // ghost 7-day tiles until data arrives
 hydrateFromCache();
 
 /* ─── Radar / Satelliit hero button helper ─────────────────────────
