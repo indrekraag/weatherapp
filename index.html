@@ -2925,8 +2925,10 @@ function manualRefresh(){
 }
 
 /* Hard refresh: drops all cached weather data from localStorage, evicts
- * the service-worker app-shell cache, and reloads. Use when something
- * looks wrong and you want a guaranteed clean state. */
+ * the service-worker app-shell cache, unregisters the worker itself (so
+ * the reload goes straight to the network and a fresh sw.js is installed
+ * on the next load), and reloads. Use when something looks wrong and you
+ * want a guaranteed clean state, or to force a new deploy onto the iPad. */
 function hardRefresh(){
   var btn = byId('hard-refresh-btn');
   if(btn){ btn.classList.add('spinning'); }
@@ -2938,13 +2940,27 @@ function hardRefresh(){
     }
     keys.forEach(function(k){ localStorage.removeItem(k); });
   } catch(e){}
-  var done = function(){ try { location.reload(); } catch(e){ window.location = window.location.href; } };
+  var reloaded = false;
+  var done = function(){
+    if(reloaded) return;
+    reloaded = true;
+    try { location.reload(); } catch(e){ window.location = window.location.href; }
+  };
+  // Never let a cache or worker call that hangs keep the button from working.
+  setTimeout(done, 4000);
   try {
+    var jobs = [];
     if(window.caches && caches.keys){
-      caches.keys().then(function(names){
+      jobs.push(caches.keys().then(function(names){
         return Promise.all(names.map(function(n){ return caches.delete(n); }));
-      }).then(done, done);
-    } else { done(); }
+      }));
+    }
+    if(navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(regs){
+        return Promise.all(regs.map(function(r){ return r.unregister(); }));
+      }));
+    }
+    Promise.all(jobs).then(done, done);
   } catch(e){ done(); }
 }
 
@@ -5483,13 +5499,61 @@ setInterval(fetchLaaneNigula, 5 * 60 * 1000);
 fetchNps();
 setInterval(fetchNps, 15 * 60 * 1000);
 
-/* ─── Hourly hard reload ──────────────────────────────────────────
+/* ─── Hourly hard reload — only when the server answers ────────────
  * Reloads the page once per hour so any code deployments are picked
  * up automatically when the tab is left open (e.g. on a wall-mounted
  * phone or iPad). Full page reload resets scroll position — this is
  * acceptable at 1×/hour. The soft data fetches above (every 5 min)
- * keep numbers current between reloads without any scroll disruption. */
-setTimeout(function(){ location.reload(); }, 60 * 60 * 1000);
+ * keep numbers current between reloads without any scroll disruption.
+ *
+ * An unconditional reload during a Wi-Fi outage swapped a working page
+ * for the browser's "cannot open the page" screen, with no script left to
+ * try again. So ask the server first — HEAD, no-store, a unique query so
+ * no cache can answer for it, 10 s timeout — and reload only on a 2xx;
+ * otherwise try again in 5 min, while the page keeps showing its last data
+ * with age badges. (The service worker below is the second net, for a
+ * reload that fails anyway.) */
+var RELOAD_EVERY_MS = 60 * 60 * 1000;
+var RELOAD_RETRY_MS = 5 * 60 * 1000;
+function reloadIfReachable(){
+  var settled = false;
+  var later = function(){
+    if(settled) return;
+    settled = true;
+    setTimeout(reloadIfReachable, RELOAD_RETRY_MS);
+  };
+  var timer = setTimeout(later, 10000);
+  try{
+    fetch(location.pathname + '?reachable=' + Date.now(), { method: 'HEAD', cache: 'no-store' })
+      .then(function(r){
+        clearTimeout(timer);
+        if(settled) return;
+        if(!r.ok){ later(); return; }
+        settled = true;
+        location.reload();
+      }, function(){ clearTimeout(timer); later(); });
+  }catch(e){ clearTimeout(timer); later(); }
+}
+setTimeout(reloadIfReachable, RELOAD_EVERY_MS);
+
+/* ─── App-shell service worker (GitHub Pages only) ──────────────────
+ * sw.js keeps a copy of this page and serves it NETWORK-FIRST: online,
+ * every load still comes from the server, so a deploy lands exactly as it
+ * did without a worker; only when the network fails does a reload paint
+ * the last copy instead of the browser's error screen — and the page then
+ * renders its cached data with the age badges. It never intercepts API,
+ * data-branch, radar/map-tile or CDN requests. https only, so the LAN dev
+ * server stays worker-free. ⟲ hardRefresh() unregisters it and deletes
+ * its cache, so a new deploy can always be forced. */
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  window.addEventListener('load', function(){
+    try{
+      navigator.serviceWorker.register('sw.js').then(null, function(e){
+        console.warn('service worker registration failed', e);
+      });
+    }catch(e){}
+  });
+}
 </script>
 
 <!-- Leaflet — loaded after the main script so it doesn't block the
