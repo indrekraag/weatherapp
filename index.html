@@ -2497,7 +2497,7 @@ body {
         <div class="glass card forecast-card">
           <div class="card-header">
             <h2>Täna · 24h</h2>
-            <span class="meta">Saju alguseni: <strong id="rain-start" class="mono">—</strong></span>
+            <span class="meta"><span id="rain-start-label">Saju alguseni:</span> <strong id="rain-start" class="mono">—</strong></span>
           </div>
 
           <!-- ROW 1: TEMPERATUUR -->
@@ -2786,7 +2786,6 @@ var APP_VERSION = 'v1.2.0';
 var APP_BUILT   = '19.09 02:12';
 
 var CONFIG = { lat:58.81627, lng:23.74447, label:'Madise', weatherRefreshMs:5*60*1000 };
-var PRESSURE_HISTORY = [];
 var TODAY_SUNRISE_MS = null, TODAY_SUNSET_MS = null;
 var TODAY_SUNRISE_AZ = null, TODAY_SUNSET_AZ = null;
 var LAST_FETCH_MS = null;
@@ -2894,14 +2893,64 @@ function degToCompass(deg){
   return d[Math.round(deg/22.5)%16];
 }
 
+/* ─── One wet/dry line for the hero and the 24 h card ──────────────
+ * RAIN_MIN_MM is a RATE in mm/h, which is the same number as an hourly
+ * amount in mm. Below it, an hour (or the present moment) counts as dry
+ * everywhere that asks "is it raining?": the hero condition word and icon,
+ * the Sadu tile's 'kuiv', the Saju alguseni countdown, the 24 h rain bars
+ * and the icon row above them. These used to draw five different lines
+ * and visibly disagreed — a drizzle glyph over 0.1 mm bars, under a
+ * countdown that ignored them.
+ *
+ * Why 0.2: Open-Meteo reports 0.1 mm steps and 0.1 mm in an hour is a
+ * trace (WMO 51 at 0.1 mm is the model's routine drizzle noise). It also
+ * lines the two time bases up: the current block is a 15-min slice of the
+ * same hourly sum, so an hour of 0.1 mm reads 0.0 now (dry) while an hour
+ * of 0.2 mm reads 0.1 per quarter = 0.4 mm/h (wet).
+ *
+ * The 7-day strip keeps its own DAILY_* thresholds below — those are daily
+ * sums, tuned against 194 days of actuals in the 2026-09-18 audit. */
+var RAIN_MIN_MM = 0.2;
+
+/* Open-Meteo's current.precipitation is the SUM over the current block's
+ * interval (current.interval = 900 s, i.e. 15 min), not a rate. Shown raw
+ * as mm/h it understated rain 4×: 0.3 mm in a quarter hour is 1.2 mm/h.
+ * Scale by 3600/interval so the tile, the words and the thresholds all
+ * see a real rate. */
+function currentPrecipRate(cur){
+  if(!cur || cur.precipitation === null || cur.precipitation === undefined || isNaN(cur.precipitation)) return 0;
+  var sec = cur.interval > 0 ? cur.interval : 900;
+  return cur.precipitation * 3600 / sec;
+}
+
+/* Day or night for the hero — ONE answer shared by the condition word and
+ * the icon, so the two can't split around dusk. Local sun times first
+ * (exact to the minute); Open-Meteo's current is_day only when those
+ * aren't computed yet (the first paint from cache runs before
+ * fetchSunTimes()). */
+function heroIsDay(cur){
+  if(TODAY_SUNRISE_MS !== null && TODAY_SUNSET_MS !== null){
+    var now = Date.now();
+    return now >= TODAY_SUNRISE_MS && now < TODAY_SUNSET_MS;
+  }
+  if(cur && cur.is_day !== null && cur.is_day !== undefined) return cur.is_day === 1;
+  return true;
+}
+
 /* ─── Weather condition phrase (Estonian) ─────────────────────────
- * Maps cloud cover % + precip rate to a short human phrase. Used in
- * the hero-condition span next to "Hetkeilm". Day/night-aware. */
-function currentSkyText(cloud, precip){
-  var isDaytime = TODAY_SUNRISE_MS !== null && TODAY_SUNSET_MS !== null
-    ? (Date.now() >= TODAY_SUNRISE_MS && Date.now() < TODAY_SUNSET_MS) : true;
+ * Maps cloud cover % + precip RATE (mm/h) to a short human phrase. Used
+ * in the hero-condition span next to "Hetkeilm". Day/night-aware.
+ * The current WMO code only decides WHAT is falling (snow, freezing rain,
+ * thunder) — whether anything falls at all is the rate's call, with the
+ * same exemptions as the icon: thunder and freezing rain are named at any
+ * amount, like dailyPrecipIcon() and heroSkyCode(). */
+function currentSkyText(cloud, precip, code, isDaytime){
+  if(typeof isDaytime !== 'boolean') isDaytime = heroIsDay(null);
+  if(code >= 95) return 'Äike';
+  if(isFreezingCode(code)) return 'Jäätuv vihm';
+  if(precip >= RAIN_MIN_MM && isSnowCode(code)) return precip >= 2 ? 'Lumesadu' : 'Nõrk lumesadu';
   if(precip >= 2) return 'Sajab';
-  if(precip > 0.1) return 'Nõrk sadu';
+  if(precip >= RAIN_MIN_MM) return 'Nõrk sadu';
   if(isDaytime){
     if(cloud <= 15) return 'Päikeseline';
     if(cloud <= 40) return 'Vähese pilvisusega';
@@ -2949,6 +2998,11 @@ var WX_SVG = {
   /* Partly cloudy day */
   partlyCloudy: '<svg viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><radialGradient id="sg2" cx="35%" cy="35%"><stop offset="0%" stop-color="#ffd58a"/><stop offset="100%" stop-color="#ff9a3e"/></radialGradient><linearGradient id="cg2" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#eaf2ff"/><stop offset="100%" stop-color="#a8c3e0"/></linearGradient></defs><circle cx="8" cy="9" r="4.5" fill="url(#sg2)" opacity="0.9"/><g stroke="#ffb86b" stroke-width="1.2" stroke-linecap="round" opacity="0.6"><line x1="8" y1="1" x2="8" y2="3"/><line x1="1" y1="9" x2="3" y2="9"/><line x1="2.8" y1="3" x2="4.2" y2="4.4"/><line x1="13" y1="3" x2="11.6" y2="4.4"/></g><path d="M9 18 Q9 14 12 14 Q13.5 11.5 16 12.5 Q19.5 11.5 20 15 Q22 15.5 21.5 18.5 Q21 21 18.5 21 L10 21 Q7.5 21 7.5 18.5 Q7.5 18 9 18Z" fill="url(#cg2)" stroke="rgba(0,0,0,0.1)" stroke-width="0.4"/></svg>',
 
+  /* Partly cloudy night — the clear-night crescent shrunk into the sun's
+   * corner, same cloud as partlyCloudy in a cooler tint. Codes 1 and 2 at
+   * night used to draw a bare moon (1) or the daytime SUN (2). */
+  partlyCloudyNight: '<svg viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cg2n" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#d6e2f4"/><stop offset="100%" stop-color="#90a9c6"/></linearGradient></defs><path transform="translate(0.3,-0.5) scale(0.75)" d="M14 3 Q7 5 7 11 Q7 17 13 18 Q8 19 5 16 Q1 12 3 7 Q5 2 11 2 Q12.5 2 14 3Z" fill="#c8d8f0" opacity="0.9"/><circle cx="16.5" cy="4.5" r="0.7" fill="#e8f0ff" opacity="0.6"/><circle cx="19.5" cy="8" r="0.5" fill="#e8f0ff" opacity="0.5"/><path d="M9 18 Q9 14 12 14 Q13.5 11.5 16 12.5 Q19.5 11.5 20 15 Q22 15.5 21.5 18.5 Q21 21 18.5 21 L10 21 Q7.5 21 7.5 18.5 Q7.5 18 9 18Z" fill="url(#cg2n)" stroke="rgba(0,0,0,0.1)" stroke-width="0.4"/></svg>',
+
   /* Overcast */
   cloudy: '<svg viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cg3" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#d0dff0"/><stop offset="100%" stop-color="#8aabbf"/></linearGradient></defs><path d="M5 15 Q5 10 9 10 Q10 7 14 8 Q18 7 19 11 Q22 11.5 21.5 15.5 Q21 19 17.5 19 L6.5 19 Q3 19 3 15.5 Q3 15 5 15Z" fill="url(#cg3)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5"/></svg>',
 
@@ -2974,8 +3028,7 @@ var WX_SVG = {
 /* Map WMO weather codes → SVG string */
 function weatherCodeToSVG(code, isDay){
   if(code === 0)  return isDay ? WX_SVG.clearDay : WX_SVG.clearNight;
-  if(code === 1)  return isDay ? WX_SVG.partlyCloudy : WX_SVG.clearNight;
-  if(code === 2)  return WX_SVG.partlyCloudy;
+  if(code === 1 || code === 2) return isDay ? WX_SVG.partlyCloudy : WX_SVG.partlyCloudyNight;
   if(code === 3)  return WX_SVG.cloudy;
   if(code === 45 || code === 48) return WX_SVG.fog;
   if(code >= 51 && code <= 57)   return WX_SVG.drizzle;
@@ -2985,6 +3038,53 @@ function weatherCodeToSVG(code, isDay){
   if(code >= 85 && code <= 86)   return WX_SVG.snow;
   if(code >= 95) return WX_SVG.thunder;
   return isDay ? WX_SVG.clearDay : WX_SVG.clearNight;
+}
+
+/* ─── Precipitation-aware icon picker (ported from wa2) ─────────────
+ * Open-Meteo's WMO code flags drizzle for a 0.1 mm trace, which drew a
+ * rain glyph over an effectively dry hour. Below RAIN_MIN_MM a
+ * precipitation code (51 drizzle … 86 snow showers) is drawn as overcast.
+ * Freezing rain/drizzle (56/57/66/67) is exempt — a fifth of a millimetre
+ * of ice is exactly what the icon should warn about — and thunder (>=95)
+ * sits outside the window anyway. Used by the 24 h icon row. */
+function skyIconSVG(code, precipAmt, isDay){
+  if(code != null && code >= 51 && code <= 86 && !isFreezingCode(code)
+     && (precipAmt || 0) < RAIN_MIN_MM){
+    return WX_SVG.cloudy;
+  }
+  return weatherCodeToSVG(code, isDay);
+}
+
+/* ─── Hero icon: from the same inputs as currentSkyText() ───────────
+ * The hero drew hourly.weathercode[curIdx] — up to 59 min old, no amount
+ * guard — beside a condition word worked out from current cloud cover and
+ * precipitation, so they could flatly contradict each other ("SELGE"
+ * beside raindrops at 02:10: code 51 against 16% cloud and 0 mm). This
+ * returns the WMO code to draw, decided like the text:
+ *   • thunder and freezing rain always show (as in dailyPrecipIcon())
+ *   • a precipitation code below RAIN_MIN_MM is dropped (wa2's guard) …
+ *   • … and rain the code didn't flag still shows — drizzle glyph, or
+ *     rain from the same 2 mm/h at which the text says 'Sajab'
+ *   • fog passes through; otherwise the sky comes from cloud cover in
+ *     the text's own bands, so 'Päikeseline' gets a sun, 'Selge' at night
+ *     a moon, 'Pilves' a cloud. */
+function heroSkyCode(code, rate, cloud, isDay){
+  if(code != null && (code >= 95 || isFreezingCode(code))) return code;
+  var isPrecipCode = code != null && code >= 51 && code <= 86;
+  if(rate >= RAIN_MIN_MM) return isPrecipCode ? code : (rate >= 2 ? 61 : 51);
+  if(code === 45 || code === 48) return code;
+  if(cloud === null || cloud === undefined || isNaN(cloud)){
+    return (code != null && code <= 3) ? code : 3;
+  }
+  if(isDay){
+    if(cloud <= 15) return 0;
+    if(cloud <= 40) return 1;
+    if(cloud <= 70) return 2;
+    return 3;
+  }
+  if(cloud <= 20) return 0;
+  if(cloud <= 50) return 1;
+  return 3;
 }
 
 /* Keep old emoji function for any legacy references */
@@ -3005,8 +3105,10 @@ function weatherCodeToIcon(code, isDay){
 /* ─── Precipitation type icon row ────────────────────────────────
  * Places SVG weather icons every 3h above the rain sparkline.
  * Same absolute-position math as the wind arrow row:
- *   left = ((barIdx + 0.5) / 24) * 100%   translateX(-50%) to centre */
-function renderPrecipTypes(codes, isDayArr){
+ *   left = ((barIdx + 0.5) / 24) * 100%   translateX(-50%) to centre
+ * precipArr (same hours as codes) feeds skyIconSVG's RAIN_MIN_MM guard,
+ * so the row never draws rain over a bar the chart calls dry. */
+function renderPrecipTypes(codes, isDayArr, precipArr){
   var el = byId('precip-types');
   if(!el || !codes || !codes.length) return;
   el.innerHTML = '';
@@ -3018,7 +3120,7 @@ function renderPrecipTypes(codes, isDayArr){
     cell.className = 'precip-type-icon';
     cell.style.left = ((barIdx + 0.5) / 24 * 100) + '%';
     if(typeof code === 'number' && !isNaN(code)){
-      cell.innerHTML = weatherCodeToSVG(code, isDay);
+      cell.innerHTML = skyIconSVG(code, (precipArr ? (precipArr[barIdx] || 0) : 99), isDay);
     }
     el.appendChild(cell);
   });
@@ -3084,6 +3186,50 @@ function tonightMinTemp(hourly){
   return lo;
 }
 
+/* Linear interpolation of an hourly series at an arbitrary instant.
+ * Walks the parsed local times rather than assuming 3600 s steps, so a
+ * DST changeover in the series can't shift it by an hour. Returns null
+ * outside the series or across a gap. */
+function hourlyValueAt(hourly, key, ms){
+  var arr = hourly[key];
+  if(!arr) return null;
+  var prevT = null, prevV = null;
+  for(var i = 0; i < hourly.time.length; i++){
+    var t = parseLocalIsoFlexible(hourly.time[i]);
+    var v = arr[i];
+    if(!t || v === null || v === undefined || isNaN(v)) continue;
+    var tm = t.getTime();
+    if(tm === ms) return v;
+    if(tm > ms){
+      if(prevT === null) return null;
+      return prevV + (v - prevV) * (ms - prevT) / (tm - prevT);
+    }
+    prevT = tm; prevV = v;
+  }
+  return null;
+}
+
+/* ─── Pressure tendency: hPa change over 3 h ─────────────────────────
+ * Was an in-memory PRESSURE_HISTORY that needed a reading 2 h old — but
+ * the page reloads itself every hour, so no reading ever got that old and
+ * the tile said '↗ stabiilne' (a rising arrow on "stable") for good. The
+ * model's own hourly surface_pressure answers on the first render: the
+ * change over the 3 h ending now, the standard barometric tendency. The
+ * series starts at 00:00, so in the first 3 h after midnight the window
+ * slides forward to 00:00 → 03:00 — still a 3 h change, still spanning now.
+ * Returns null when the series can't answer (e.g. a cached payload from
+ * before surface_pressure was requested). */
+function pressureTendency3h(hourly){
+  if(!hourly || !hourly.time || !hourly.time.length || !hourly.surface_pressure) return null;
+  var first = parseLocalIsoFlexible(hourly.time[0]);
+  if(!first) return null;
+  var endMs = Date.now(), startMs = endMs - 3 * 3600000;
+  if(startMs < first.getTime()){ startMs = first.getTime(); endMs = startMs + 3 * 3600000; }
+  var a = hourlyValueAt(hourly, 'surface_pressure', startMs);
+  var b = hourlyValueAt(hourly, 'surface_pressure', endMs);
+  return (a === null || b === null) ? null : b - a;
+}
+
 function findCurrentHourIdx(times){
   var now = new Date();
   var best = 0;
@@ -3142,13 +3288,18 @@ function renderWeather(data, savedAt){
     var pressure = Math.round(cur.surface_pressure);
     var wind = round1(cur.wind_speed_10m);
     var gust = round1(cur.wind_gusts_10m);
-    var precip = round1(cur.precipitation);
+    var precip = round1(currentPrecipRate(cur));   // mm/h — see currentPrecipRate()
     var cloud = Math.round(cur.cloud_cover);
     var dir = Math.round(cur.wind_direction_10m);
     var uv = cur.uv_index !== undefined ? round1(cur.uv_index) : null;
-
-    PRESSURE_HISTORY.push({t:Date.now(), p:pressure});
-    PRESSURE_HISTORY = PRESSURE_HISTORY.filter(function(x){ return Date.now() - x.t <= 4*60*60*1000; });
+    var curIdx = findCurrentHourIdx(data.hourly.time);
+    // The current WMO code; older cached payloads lack it, so fall back to
+    // the hourly code of the hour we're in (curIdx + 1: hourly codes, like
+    // hourly precipitation, describe the hour ENDING at their timestamp).
+    var curCode = cur.weather_code != null ? cur.weather_code
+      : (cur.weathercode != null ? cur.weathercode
+      : (data.hourly.weathercode ? data.hourly.weathercode[Math.min(curIdx + 1, data.hourly.weathercode.length - 1)] : null));
+    var isDay = heroIsDay(cur);
 
     // Big temp
     var tempEl = byId('wx-temp');
@@ -3159,7 +3310,7 @@ function renderWeather(data, savedAt){
 
     // Condition phrase
     var condEl = byId('wx-cond');
-    if(condEl) condEl.textContent = currentSkyText(cloud, precip);
+    if(condEl) condEl.textContent = currentSkyText(cloud, precip, curCode, isDay);
 
     // Pills
     if(byId('wx-feels')) byId('wx-feels').textContent = feels;
@@ -3191,7 +3342,7 @@ function renderWeather(data, savedAt){
       // low-end alpha is calibrated for bar backgrounds not foreground
       // text, so dry (0.0) would be near-invisible. When dry use default
       // white; when raining use the ramp color but clamp alpha to 1.
-      if(precip >= 0.05 && typeof rainBarColor === 'function'){
+      if(precip >= RAIN_MIN_MM && typeof rainBarColor === 'function'){
         var rc = rainBarColor(precip, 'mm/h').replace(/[\d.]+\)$/, '1)');
         rainEl.style.color = rc;
       } else {
@@ -3200,23 +3351,21 @@ function renderWeather(data, savedAt){
     }
     var rainCurSub = byId('rain-current-sub');
     if(rainCurSub){
-      if(precip < 0.05) rainCurSub.textContent = 'kuiv';
+      if(precip < RAIN_MIN_MM) rainCurSub.textContent = 'kuiv';
       else if(precip < 0.5) rainCurSub.textContent = 'nõrk sadu';
       else if(precip < 2) rainCurSub.textContent = 'mõõdukas';
       else if(precip < 7) rainCurSub.textContent = 'tugev';
       else rainCurSub.textContent = 'paduvihm';
     }
 
-    // Pressure
+    // Pressure — 3 h tendency, ±1 hPa either side counts as steady. The
+    // arrow and the word come from the same branch so they can't disagree;
+    // '—' when the series can't answer rather than a default guess.
     if(byId('wx-pressure')) byId('wx-pressure').textContent = pressure;
-    var pressureTrend = '↗ stabiilne', oldPoint = null;
-    for(var i=0;i<PRESSURE_HISTORY.length;i++){
-      if(Date.now() - PRESSURE_HISTORY[i].t >= 2*60*60*1000){ oldPoint = PRESSURE_HISTORY[i]; break; }
-    }
-    if(oldPoint){
-      var diffP = pressure - oldPoint.p;
-      if(diffP >= 1) pressureTrend = '↗ tõuseb';
-      else if(diffP <= -1) pressureTrend = '↘ langeb';
+    var diffP = pressureTendency3h(data.hourly), pressureTrend = '—';
+    if(diffP !== null){
+      if(diffP >= 1) pressureTrend = '↑ tõuseb';
+      else if(diffP <= -1) pressureTrend = '↓ langeb';
       else pressureTrend = '→ stabiilne';
     }
     if(byId('wx-pressure-trend')) byId('wx-pressure-trend').textContent = pressureTrend;
@@ -3242,7 +3391,6 @@ function renderWeather(data, savedAt){
     }
 
     // Visibility (current hour from hourly array)
-    var curIdx = findCurrentHourIdx(data.hourly.time);
     var visM = data.hourly.visibility ? data.hourly.visibility[curIdx] : null;
     if(byId('wx-vis')) byId('wx-vis').textContent = visText(visM);
 
@@ -3274,7 +3422,7 @@ function renderWeather(data, savedAt){
 
     renderHourly(data.hourly);
     renderDaily(data.daily, data.hourly);
-    updateRainStart(data.hourly);
+    updateRainStart(data.hourly, precip);
     checkAlerts(data.hourly);
 
     // Sparklines (replace mock data with real)
@@ -3284,16 +3432,28 @@ function renderWeather(data, savedAt){
         ? data.hourly.wind_gusts_10m.slice(curIdx, curIdx + 24) : null;
       var next24WindDir = data.hourly.wind_direction_10m
         ? data.hourly.wind_direction_10m.slice(curIdx, curIdx + 24) : null;
+      // Rain row: Open-Meteo's hourly precipitation, its probability and
+      // the weather code describe the hour ENDING at time[i] — rain stamped
+      // 20:00 falls from 19:00. Read them from curIdx + 1 so bar i sits
+      // under the hour it rains in (bar 0 = the hour we're in, not the one
+      // that just ended), and the 'max … · kl HH' caption names that hour.
+      // The icon row's codes and day flags take the same shift. Temperature
+      // and wind are instants at time[i] and stay on curIdx.
+      var rIdx = curIdx + 1;
       var next24Prob = data.hourly.precipitation_probability
-        ? data.hourly.precipitation_probability.slice(curIdx, curIdx + 24) : null;
-      var next24Mm = data.hourly.precipitation.slice(curIdx, curIdx + 24);
+        ? data.hourly.precipitation_probability.slice(rIdx, rIdx + 24) : null;
+      // Hours below RAIN_MIN_MM draw as dry, so the bars, the caption, the
+      // icon row and the Saju alguseni countdown all call the same hours wet.
+      var next24Mm = data.hourly.precipitation.slice(rIdx, rIdx + 24).map(function(v){
+        return (v || 0) >= RAIN_MIN_MM ? v : 0;
+      });
       var next24Temp = data.hourly.temperature_2m.slice(curIdx, curIdx + 24);
       var next24Feels = data.hourly.apparent_temperature
         ? data.hourly.apparent_temperature.slice(curIdx, curIdx + 24) : null;
       var next24Code = data.hourly.weathercode
-        ? data.hourly.weathercode.slice(curIdx, curIdx + 24) : null;
+        ? data.hourly.weathercode.slice(rIdx, rIdx + 24) : null;
       var next24IsDay = data.hourly.is_day
-        ? data.hourly.is_day.slice(curIdx, curIdx + 24) : null;
+        ? data.hourly.is_day.slice(rIdx, rIdx + 24) : null;
 
       if(next24Wind.length) renderSpark('spark-wind', next24Wind,
         {unit:'m/s', directions: next24WindDir,
@@ -3312,18 +3472,14 @@ function renderWeather(data, savedAt){
                   {unit: mode === 'prob' ? '%' : 'mm/h',
                    colorFn: rainBarColor,
                    legend: mode === 'prob' ? RAIN_LEGEND_PROB : RAIN_LEGEND_MM});
-      if(next24Code) renderPrecipTypes(next24Code, next24IsDay);
+      if(next24Code) renderPrecipTypes(next24Code, next24IsDay, next24Mm);
     }
 
-    // Hero SVG icon — update to match current weather code
+    // Hero SVG icon — decided from the same code, rate, cloud cover and
+    // day/night as the condition word above it (see heroSkyCode()).
     var heroIconEl = byId('wx-cond-icon-big');
-    if(heroIconEl && typeof weatherCodeToSVG === 'function'){
-      var curCode = data.current && data.current.weathercode != null
-        ? data.current.weathercode
-        : (data.hourly.weathercode ? data.hourly.weathercode[curIdx] : null);
-      var curIsDay = data.current && data.current.is_day != null
-        ? data.current.is_day : 1;
-      if(curCode != null) heroIconEl.innerHTML = weatherCodeToSVG(curCode, curIsDay === 1);
+    if(heroIconEl && typeof weatherCodeToSVG === 'function' && (curCode != null || !isNaN(cloud))){
+      heroIconEl.innerHTML = weatherCodeToSVG(heroSkyCode(curCode, precip, cloud, isDay), isDay);
     }
 
     LAST_FETCH_MS = savedAt || Date.now();
@@ -3476,19 +3632,43 @@ function renderDaily(daily, hourly){
 
 /* ═══════════════════════════════════════════════════════════════
  * RENDER — Saju alguseni countdown
+ *
+ * Open-Meteo's hourly precipitation[i] is the sum over the hour ENDING at
+ * time[i], i.e. (t−1h, t] — rain stamped 20:00 starts at 19:00. Reading it
+ * as an hour-start value made the countdown an hour late, always in the
+ * "more time than you have" direction. A slot counts from t − 1h.
+ *
+ * rateNow is the current precipitation rate in mm/h. While that is already
+ * at RAIN_MIN_MM there is nothing to count down to, so the line flips to
+ * "Sajab praegu · lõpp ~HH:MM" — the start of the first dry slot. Same
+ * search both ways: the first future slot whose wet/dry state differs from
+ * now.
  * ═══════════════════════════════════════════════════════════════ */
-function updateRainStart(hourly){
+function updateRainStart(hourly, rateNow){
   var el = byId('rain-start');
   if(!el) return;
-  var now = new Date(), found = null;
+  var labelEl = byId('rain-start-label');
+  var now = Date.now(), raining = rateNow >= RAIN_MIN_MM, change = null;
   for(var i=0;i<hourly.time.length;i++){
     var t = parseLocalIsoFlexible(hourly.time[i]);
-    if(!t || t.getTime() < now.getTime()) continue;
-    var p = round1(hourly.precipitation[i] || 0);
-    if(p > 0.2){ found = t; break; }
+    if(!t || t.getTime() <= now) continue;          // slot already over
+    var wet = (hourly.precipitation[i] || 0) >= RAIN_MIN_MM;
+    if(wet !== raining){ change = t.getTime() - 3600000; break; }
   }
-  if(!found){ el.textContent = '— pole oodata'; return; }
-  var diff = found.getTime() - now.getTime();
+  if(raining){
+    // The end can only be named if it is still ahead; if the model thinks
+    // this very hour is dry, "raining now" is all we can honestly say.
+    var endAhead = change !== null && change > now;
+    if(labelEl) labelEl.textContent = endAhead ? 'Sajab praegu · lõpp' : 'Sajab praegu';
+    el.textContent = endAhead ? '~' + formatTime(new Date(change)) : '';
+    return;
+  }
+  if(labelEl) labelEl.textContent = 'Saju alguseni:';
+  if(change === null){ el.textContent = '— pole oodata'; return; }
+  var diff = change - now;
+  // The slot we're in is forecast wet but nothing is falling yet: the
+  // hourly sum can't say when inside the hour it starts.
+  if(diff <= 0){ el.textContent = 'alla tunni'; return; }
   var h = Math.floor(diff/3600000), m = Math.floor((diff%3600000)/60000);
   el.textContent = h <= 0 ? ('~' + m + ' min') : ('~' + h + ' h ' + m + ' min');
 }
@@ -3497,8 +3677,13 @@ function fetchWeatherAndForecast(){
   var url = 'https://api.open-meteo.com/v1/forecast'
     + '?latitude=' + CONFIG.lat
     + '&longitude=' + CONFIG.lng
-    + '&current=temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,cloud_cover,uv_index'
-    + '&hourly=temperature_2m,apparent_temperature,precipitation,precipitation_probability,weathercode,is_day,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,visibility,snow_depth'
+    // current weather_code + is_day feed the hero icon (heroSkyCode());
+    // current precipitation is a 15-min SUM — see currentPrecipRate().
+    // hourly surface_pressure feeds the 3 h tendency (pressureTendency3h()).
+    // minutely_15 is deliberately not requested: with ecmwf_ifs it is the
+    // hourly sum split evenly into quarters, so it adds no timing.
+    + '&current=temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,cloud_cover,uv_index,weather_code,is_day'
+    + '&hourly=temperature_2m,apparent_temperature,precipitation,precipitation_probability,weathercode,is_day,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,visibility,snow_depth,surface_pressure'
     // precipitation_hours + precipitation_probability_max feed the 7-day
     // icon threshold in dailyPrecipIcon() — see the note there for why a
     // daily weathercode alone is not enough to decide "is it a rainy day".
