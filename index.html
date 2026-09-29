@@ -8011,6 +8011,14 @@ function drawOverlay(){
   var origin = latlngToPixel(CONFIG.lat, CONFIG.lng);
   var cx = origin.x, cy = origin.y;
 
+  // Every label on the map is at the kiosk's 14px floor. LBL_CH is one
+  // monospace figure at that size and LBL_H a label's height — the boxes
+  // the anti-overlap below works with.
+  var LBL_FS = 14, LBL_CH = 8.5, LBL_H = 16;
+  // Radii of the sun ring and, just inside it, the moon's.
+  var sunRingR  = Math.min(W, H) * 0.40;
+  var moonRingR = sunRingR * 0.92;
+
   // Labels stay inside the map, and below the warning strip when one is up.
   var warnEl = document.getElementById('map-warning');
   var topPad = (mapEl.classList.contains('has-warning') && warnEl) ? warnEl.offsetHeight : 0;
@@ -8032,6 +8040,23 @@ function drawOverlay(){
     var r = el.getBoundingClientRect();
     placedLabels.push({ x: r.left - mr.left + r.width / 2, y: r.top - mr.top + r.height / 2, w: r.width, h: r.height });
   });
+  // The current sun and moon discs are kept clear too. They are drawn
+  // further down, after the wind label is placed — and on S–SW afternoons
+  // the wind comes from about where the sun stands, so the disc used to
+  // sit on the gust figure. 22px covers the dark ring and most of the glow.
+  function keepOut(az, ringR){
+    var p = anglePx(az, ringR, cx, cy);
+    placedLabels.push({ x: p.x, y: p.y, w: 22, h: 22 });
+  }
+  if(TODAY_SUNRISE_MS !== null && TODAY_SUNSET_MS !== null &&
+     now >= TODAY_SUNRISE_MS && now < TODAY_SUNSET_MS && typeof solarPosition === 'function'){
+    var spKeep = solarPosition(new Date(now), CONFIG.lat, CONFIG.lng);
+    if(spKeep) keepOut(spKeep.azimuth, sunRingR);
+  }
+  if(typeof moonPosition === 'function'){
+    var mpKeep = moonPosition(new Date(now), CONFIG.lat, CONFIG.lng);
+    if(mpKeep && mpKeep.altitude > 0) keepOut(mpKeep.azimuth, moonRingR);
+  }
   function clashes(x, y, w, h){
     for(var i = 0; i < placedLabels.length; i++){
       var p = placedLabels[i];
@@ -8045,7 +8070,7 @@ function drawOverlay(){
   // clamped into the map — the label that used to be pushed off the edge
   // now slides back in along the same line.
   function placeText(x, y, approxW){
-    var approxH = 14;
+    var approxH = LBL_H;
     var dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1;
     var ux = dx / d, uy = dy / d;
     function clampX(v){ return Math.max(B.l + approxW / 2, Math.min(B.r - approxW / 2, v)); }
@@ -8059,16 +8084,17 @@ function drawOverlay(){
     return { x: ax, y: ay };
   }
   // A rise/set marker is its glyph AND its time, placed as one box: the
-  // glyph sits 22 px left of the time's centre, as before, and moves with
-  // it when the pair is nudged. So a later label can't land on a glyph —
-  // the sun's "49°" used to sit under the moonset glyph.
+  // glyph sits just left of the time (its drawing spans −8…+6 px around
+  // gx) and moves with it when the pair is nudged. So a later label can't
+  // land on a glyph — the sun's "49°" used to sit under the moonset glyph.
   function placeMarker(ox, oy, glyph, time, textAttrs){
-    var tw = time ? time.length * 7 : 0;
-    var left = -30, right = time ? tw / 2 : -14;    // box edges, relative to the time's centre
+    var tw = time ? time.length * LBL_CH : 0;
+    var gx = time ? -(tw / 2 + 8) : -22;            // glyph centre, relative to the time's centre
+    var left = gx - 8, right = time ? tw / 2 : gx + 8;
     var mid = (left + right) / 2;
     var p = placeText(ox + mid, oy, right - left);
     var tx = p.x - mid;
-    parts.push('<g transform="translate('+(tx - 22).toFixed(1)+','+p.y.toFixed(1)+')">' + glyph + '</g>');
+    parts.push('<g transform="translate('+(tx + gx).toFixed(1)+','+p.y.toFixed(1)+')">' + glyph + '</g>');
     if(time){
       parts.push('<text x="'+tx.toFixed(1)+'" y="'+p.y.toFixed(1)+'"' + textAttrs + '>'+time+'</text>');
     }
@@ -8088,31 +8114,60 @@ function drawOverlay(){
     }
     label += '<tspan font-weight="500"> m/s</tspan>';
     wTxt += ' m/s';
-    var wW = wTxt.length * 7;
+    var wW = wTxt.length * LBL_CH;
+    var u = anglePx(IPAD.windDir, 1, 0, 0);          // unit vector towards the tail
+
+    // The label sits off the arrow's shaft, never on it. Centred on the
+    // tail, as it was, the shaft ran into the middle of the label — through
+    // half the figures on a shallow arrow. Whichever step is shorter: past
+    // the end (a steep arrow, where half the label's height clears it) or
+    // to the side, above the shaft (a shallow one, where past the end would
+    // be half the label's width away).
+    var aux = Math.abs(u.x), auy = Math.abs(u.y);
+    var sPast = Math.min(aux > 0.01 ? wW / 2 / aux : Infinity,
+                         auy > 0.01 ? LBL_H / 2 / auy : Infinity) + 4;
+    var sSide = auy * wW / 2 + aux * LBL_H / 2 + 4;
+    var off;
+    if(sPast <= sSide){
+      off = { x: u.x * sPast, y: u.y * sPast, past: sPast };
+    } else {
+      var nx = -u.y, ny = u.x;                       // perpendicular, turned to point up
+      if(ny > 0){ nx = -nx; ny = -ny; }
+      off = { x: nx * sSide, y: ny * sSide, past: 0 };
+    }
 
     // 110 px + 14 px per m/s, but never past the map edge along the
-    // bearing, leaving the label room at the tail. It used to be capped at
+    // bearing, leaving the label room beyond the tail. It used to be capped at
     // half the map's LONGER side (303 px) while the map is 395 px tall, so
     // a mostly N/S wind over ~6 m/s put the tail and its label beyond the
     // edge, and at 14 m/s a westerly lost the "14" off the left.
-    var u = anglePx(IPAD.windDir, 1, 0, 0);          // unit vector towards the tail
     var room = Infinity;
     if(u.x >  0.01) room = Math.min(room, (B.r - wW / 2 - cx) / u.x);
     if(u.x < -0.01) room = Math.min(room, (B.l + wW / 2 - cx) / u.x);
-    if(u.y >  0.01) room = Math.min(room, (B.b - 9 - cy) / u.y);
-    if(u.y < -0.01) room = Math.min(room, (B.t + 9 - cy) / u.y);
-    var arrowLen = Math.max(40, Math.min(110 + IPAD.windSpeed * 14, room));
+    if(u.y >  0.01) room = Math.min(room, (B.b - LBL_H / 2 - 1 - cy) / u.y);
+    if(u.y < -0.01) room = Math.min(room, (B.t + LBL_H / 2 + 1 - cy) / u.y);
+    var arrowLen = Math.max(40, Math.min(110 + IPAD.windSpeed * 14, room - off.past));
     var tail = anglePx(IPAD.windDir, arrowLen, cx, cy);  // upwind end
+
+    var wlp = placeText(tail.x + off.x, tail.y + off.y, wW);
+    // Past the end, a nudge back towards Madise (to clear a control, the
+    // radar badge, a disc) would put the label on the shaft again — so the
+    // shaft then ends short of the label instead.
+    if(off.past){
+      var reach = (wlp.x - cx) * u.x + (wlp.y - cy) * u.y - off.past;
+      if(reach < arrowLen){
+        arrowLen = Math.max(40, reach);
+        tail = anglePx(IPAD.windDir, arrowLen, cx, cy);
+      }
+    }
     var wx1 = tail.x.toFixed(1), wy1 = tail.y.toFixed(1),
         wx2 = cx.toFixed(1),     wy2 = cy.toFixed(1);
     parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
                '" stroke="'+WIND_HALO+'" stroke-width="3.2" stroke-linecap="round"/>');
     parts.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+wx2+'" y2="'+wy2+
                '" stroke="'+WIND_COLOR+'" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arr-wind)"/>');
-
-    var wlp = placeText(tail.x, tail.y, wW);
     parts.push('<text x="'+wlp.x.toFixed(1)+'" y="'+wlp.y.toFixed(1)+
-               '" font-family="ui-monospace, SF Mono, monospace" font-size="12"' +
+               '" font-family="ui-monospace, SF Mono, monospace" font-size="'+LBL_FS+'"' +
                ' fill="rgba(220,240,255,1)"' +
                ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                ' text-anchor="middle" dominant-baseline="central">' + label + '</text>');
@@ -8129,7 +8184,7 @@ function drawOverlay(){
   // Sampling: solarPosition() every 4 min during daytime → ~240 samples
   // for a full Estonian summer day. That's smooth enough at viewport
   // sizes we care about, and cheap to recompute on each map move.
-  var sunRingR = Math.min(W, H) * 0.40;
+  // (sunRingR is set at the top, with the label keep-outs.)
   if(typeof solarPosition === 'function' &&
      TODAY_SUNRISE_MS !== null && TODAY_SUNSET_MS !== null){
 
@@ -8231,7 +8286,7 @@ function drawOverlay(){
       // Outset the label radially from Madise by a few px
       var outset = anglePx(az, sunRingR + 22, cx, cy);
       placeMarker(outset.x, outset.y, sunGlyph(kind, color), time,
-                  ' font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                  ' font-family="ui-monospace, SF Mono, monospace" font-size="'+LBL_FS+'" font-weight="700"' +
                   ' fill="rgba(255,235,210,1)"' +
                   ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                   ' text-anchor="middle" dominant-baseline="central"');
@@ -8255,9 +8310,9 @@ function drawOverlay(){
       var spNow = solarPosition(new Date(), CONFIG.lat, CONFIG.lng);
       if(spNow && typeof spNow.altitude === 'number'){
         var altLbl = anglePx(spNow.azimuth, sunRingR + 22, cx, cy);
-        var sap = placeText(altLbl.x, altLbl.y, 28);
+        var sap = placeText(altLbl.x, altLbl.y, 3 * LBL_CH + 4);
         parts.push('<text x="'+sap.x.toFixed(1)+'" y="'+sap.y.toFixed(1)+
-                   '" font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                   '" font-family="ui-monospace, SF Mono, monospace" font-size="'+LBL_FS+'" font-weight="700"' +
                    ' fill="rgba(255,235,210,1)"' +
                    ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                    ' text-anchor="middle" dominant-baseline="central">' +
@@ -8271,7 +8326,6 @@ function drawOverlay(){
   // Rise/set markers come from the REAL findMoonRiseSet() crossings, not
   // the sampling-window edges (those land at the same clock time 24 h
   // apart and produced a bogus duplicate "rise == set" label). ──
-  var moonRingR = sunRingR * 0.92;
   if(typeof moonPosition === 'function' && typeof findMoonRiseSet === 'function'){
     var MOON_COLOR     = 'rgba(220,226,238,0.98)';
     var MOON_DIM_COLOR = 'rgba(216,223,236,0.88)';   // brighter so the arc reads clearly
@@ -8331,7 +8385,7 @@ function drawOverlay(){
         var outset = anglePx(mp.azimuth, moonRingR + 22, cx, cy);
         var tm = (typeof formatTime === 'function') ? formatTime(new Date(t)) : '';
         placeMarker(outset.x, outset.y, moonGlyph(kind, MOON_COLOR), tm,
-                    ' font-family="ui-monospace, SF Mono, monospace" font-size="12" font-weight="700"' +
+                    ' font-family="ui-monospace, SF Mono, monospace" font-size="'+LBL_FS+'" font-weight="700"' +
                     ' fill="rgba(225,230,242,1)"' +
                     ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                     ' text-anchor="middle" dominant-baseline="central"');
@@ -8347,9 +8401,9 @@ function drawOverlay(){
         parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+'" r="6.5" fill="rgba(0,0,0,0.6)"/>');
         parts.push('<circle cx="'+mNowPt.x.toFixed(1)+'" cy="'+mNowPt.y.toFixed(1)+'" r="5" fill="'+MOON_COLOR+'"/>');
         var mLbl = anglePx(mNow.azimuth, moonRingR + 22, cx, cy);
-        var mlp = placeText(mLbl.x, mLbl.y, 28);
+        var mlp = placeText(mLbl.x, mLbl.y, 3 * LBL_CH + 4);
         parts.push('<text x="'+mlp.x.toFixed(1)+'" y="'+mlp.y.toFixed(1)+
-                   '" font-family="ui-monospace, SF Mono, monospace" font-size="11" font-weight="700"' +
+                   '" font-family="ui-monospace, SF Mono, monospace" font-size="'+LBL_FS+'" font-weight="700"' +
                    ' fill="rgba(220,228,240,1)"' +
                    ' stroke="'+TEXT_HALO+'" stroke-width="3" paint-order="stroke"' +
                    ' text-anchor="middle" dominant-baseline="central">' +
