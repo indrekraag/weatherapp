@@ -1825,6 +1825,9 @@ body {
   color: rgba(255,255,255,0.80) !important;
   border-color: rgba(255,255,255,0.10) !important;
 }
+/* Map warning banner: kiosk only (styled in the landscape query). The
+   phone shows the same warnings in #warning-bar / #alert-banner. */
+.map-warning { display: none; }
 
 /* ─── iPad left-column wrapper (default: invisible on phone) ───
  * `display:contents` makes the wrapper itself disappear from the box
@@ -1974,38 +1977,13 @@ body {
   .duo-air,
   .footer { display: none !important; }
 
-  /* Warning bar — TEMPORARILY DISABLED.
-   *
-   * It still throws off the column-height balance (left col ends up
-   * taller than right because the warning row spans both but the
-   * forecast underneath stays at its natural height). Hiding the bar
-   * entirely on iPad until we figure out a layout fix that keeps both
-   * columns aligned with the warning visible.
-   *
-   * To re-enable: delete the `display: none` rule below and restore
-   * the styling block immediately under it. The renderWarnings() JS
-   * still runs and still toggles the .warning-bar-empty class — only
-   * the iPad-layout visibility is suppressed. */
+  /* The phone's two warning rows (#warning-bar: official CAP warnings,
+   * #alert-banner: the forecast's storm alert) stay hidden here. A row
+   * above the grid threw off the column balance, and any height it takes
+   * comes out of the map — measured: a 40 px row shrank the map 395 → 355.
+   * On the kiosk both feed .map-warning instead, which overlays the top of
+   * the map and costs no height (see renderMapWarning). */
   #warning-bar { display: none !important; }
-
-  /* (Original styling preserved for easy restore — wrap in a working
-   *  selector when re-enabling.)
-   *
-   * #warning-bar {
-   *   grid-column: 1 / -1;
-   *   grid-row: 1;
-   *   padding: 5px 14px;
-   *   min-height: 0;
-   *   border-radius: 12px;
-   * }
-   * #warning-bar.warning-bar-empty {
-   *   background: rgba(255,255,255,0.03);
-   *   border: 1px solid rgba(255,255,255,0.08);
-   *   color: rgba(255,255,255,0.55);
-   *   font-size: 11px;
-   * }
-   * #warning-bar.warning-bar-empty .alert-icon { color: var(--ok); opacity: 0.85; }
-   */
 
   /* LEFT COLUMN — spans rows 2-3 so it stretches to the top, full height.
    * Inside .ipad-left-col we flex hero + forecast-card vertically.
@@ -2235,6 +2213,48 @@ body {
     flex-shrink: 0;
     box-shadow: 0 0 0 1px rgba(0,0,0,0.30) inset;
   }
+
+  /* Warning banner over the top edge of the map (renderMapWarning).
+   * Solid MeteoAlarm colours, not the glass tints: it has to read as a
+   * warning at a glance from the door, over any map or radar colour.
+   * Text 19 / 16 px for about a metre. The +/- block and the Sadu legend
+   * move down under it (.has-warning), so neither is covered; the map
+   * itself keeps its size. Taps pass through to the map. */
+  .map-warning.on {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px 10px;
+    background: var(--mw-bg);
+    color: var(--mw-fg);
+    font-family: -apple-system, "SF Pro Text", sans-serif;
+    line-height: 1.25;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+    pointer-events: none;
+  }
+  /* MeteoAlarm levels. Contrast of the text: 10.7 / 7.3 / 5.1 : 1. */
+  .map-warning.lvl1 { --mw-bg: #f2c94c; --mw-fg: #241c00; }   /* yellow */
+  .map-warning.lvl2 { --mw-bg: #ef8a30; --mw-fg: #231100; }   /* orange */
+  .map-warning.lvl3 { --mw-bg: #cc362c; --mw-fg: #ffffff; }   /* red    */
+  .map-warning-icon { flex: 0 0 auto; width: 26px; height: 24px; }
+  .map-warning-icon .tri  { fill: var(--mw-fg); }
+  .map-warning-icon .bang { stroke: var(--mw-bg); stroke-width: 2.6; stroke-linecap: round; fill: none; }
+  .map-warning-text { flex: 1 1 auto; min-width: 0; }
+  .map-warning-title { font-size: 19px; font-weight: 700; margin-right: 6px; }
+  .map-warning-detail { font-size: 16px; font-weight: 500; }
+  .map-warning-more {
+    flex: 0 0 auto;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.16);
+  }
+  #radar-map.has-warning .leaflet-top { top: var(--map-warning-h, 0px); }
+  #radar-map.has-warning .precip-legend { top: calc(var(--map-warning-h, 0px) + 10px); }
 
   /* Zoom-preset buttons — small pill row floating over the bottom-center
    * of the map. Same accent-amber treatment as .radar-mode-btn so they
@@ -2762,6 +2782,11 @@ body {
               <div class="precip-legend-row"><span class="precip-sw" style="background:#f5d83a"></span>Tugev</div>
               <div class="precip-legend-row"><span class="precip-sw" style="background:#e8533b"></span>Väga tugev</div>
             </div>
+            <!-- Warning banner — kiosk only, over the top edge of the map.
+                 Empty and display:none until an official warning, a storm
+                 alert from the forecast or an icy Kurevere road is active
+                 (renderMapWarning). Takes no layout space either way. -->
+            <div class="map-warning" id="map-warning" role="status" aria-live="polite"></div>
             <!-- SVG overlay (wind arrows + sun rise/set lines) injected
                  here by initIpadEnhancements() after Leaflet's own DOM
                  is in place. -->
@@ -2920,8 +2945,7 @@ function manualRefresh(){
   fetchOvation();
   fetchSolarWind();
   fetchKurevere();
-  fetchLaaneNigula();
-  fetchWarnings();
+  fetchLaaneNigula();       // also brings the warnings
 }
 
 /* Hard refresh: drops all cached weather data from localStorage, evicts
@@ -2995,6 +3019,7 @@ function updateWeatherAge(){
 function updateStaleIndicator(){
   updateWeatherAge();
   refreshStationAges();
+  renderMapWarning();     // re-word times ('praegu'), drop expired warnings
   if(!LAST_FETCH_MS) return;
   var el = byId('last-updated');
   if(!el) return;
@@ -3391,36 +3416,246 @@ function findCurrentHourIdx(times){
   return best;
 }
 
-/* ─── Transient alert banner ──────────────────────────────────── */
-function checkAlerts(hourly){
-  var now = new Date();
-  var stormTime = null, rainTime = null;
-  for(var i=0;i<hourly.time.length;i++){
-    var t = parseLocalIsoFlexible(hourly.time[i]);
-    if(!t || t.getTime() < now.getTime()) continue;
-    if(t.getTime() > now.getTime() + 12*3600000) break;
-    var code = hourly.weathercode[i];
-    var precip = hourly.precipitation[i] || 0;
-    if(code >= 95 && !stormTime) stormTime = t;
-    else if((code === 65 || code === 67 || code === 82) && precip > 3 && !rainTime) rainTime = t;
+/* ═══════════════════════════════════════════════════════════════
+ * MAP WARNING BANNER — the kiosk's one warning surface
+ *
+ * #warning-bar and #alert-banner each need a grid row, which the kiosk
+ * can't spare (see the note by their CSS), so on the iPad they stay
+ * hidden and everything that deserves a warning lands here instead: a
+ * strip over the top edge of the radar map. It costs no layout height.
+ * Idle it is display:none and empty, and the map keeps its size.
+ *
+ * Three sources, each owning one slot of MAP_WARN:
+ *   cap  — official MeteoAlarm / EMHI warnings via the bridge (renderWarnings)
+ *   app  — the model's own thunder / heavy rain / gusts (checkAlerts)
+ *   road — an icy Kurevere reading (renderKurevereRoad)
+ * Levels follow MeteoAlarm: 1 yellow, 2 orange, 3 red. The most severe
+ * item is shown and the rest are counted ('+2'). Official beats the model
+ * on the same phenomenon: a CAP wind warning replaces the app's own gust
+ * alert rather than stacking up beside it.
+ *
+ * The 30-s clock tick re-renders (updateStaleIndicator), so 'alates
+ * ~15:00' turns into 'praegu' and expired items drop off on time even
+ * while a feed is down. The DOM is only rewritten when the text changes.
+ * ═══════════════════════════════════════════════════════════════ */
+var MAP_WARN = { cap: [], app: [], road: [] };
+var MAP_WARN_KEY = null;
+var MAP_WARN_SRC_RANK  = { cap: 0, road: 1, app: 2 };
+var MAP_WARN_KIND_RANK = { thunder: 0, wind: 1, rain: 2 };
+var MAP_WARN_ICON =
+  '<svg class="map-warning-icon" viewBox="0 0 24 22" aria-hidden="true">' +
+  '<path class="tri" d="M12 1.2 L23.2 20.8 H0.8 Z"/>' +
+  '<path class="bang" d="M12 8v6.2M12 16.9v0.4"/></svg>';
+
+function setMapWarnings(src, items){
+  if(!MAP_WARN) return;
+  MAP_WARN[src] = items || [];
+  renderMapWarning();
+}
+
+/* '21:00' today, 'homme 07:00' tomorrow, '02.10 07:00' beyond. */
+function warnWhen(ms, now){
+  var d = new Date(ms), n = new Date(now);
+  var days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+                       - new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime()) / 86400000);
+  return (days === 0 ? '' : days === 1 ? 'homme ' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ')
+       + formatTime(d);
+}
+
+/* Title + one detail line for an item, worded for 'now'. */
+function mapWarnText(w, now){
+  var parts = [];
+  if(w.src === 'cap'){
+    if(w.area) parts.push(w.area);
+    if(w.startMs !== null && w.startMs > now){
+      parts.push(warnWhen(w.startMs, now) + (w.endMs !== null ? ' – ' + warnWhen(w.endMs, now) : ''));
+    }else if(w.endMs !== null){
+      parts.push('kuni ' + warnWhen(w.endMs, now));
+    }
+    return { title: w.title, detail: parts.join(' · ') };
   }
+  if(w.src === 'road'){
+    var ageMin = w.obsMs !== null ? (now - w.obsMs) / 60000 : null;
+    return { title: w.title,
+             detail: w.detail + (ageMin !== null && ageMin > STATION_AGE_TAG_MIN ? ' · ' + ageText(ageMin) : '') };
+  }
+  // The model's own alert: a slot that has begun is 'praegu', never 'oodata'.
+  parts.push(w.startMs <= now ? 'praegu' : 'alates ~' + warnWhen(w.startMs, now));
+  if(w.kind === 'rain') parts.push('kuni ' + round1(w.peak) + ' mm/h');
+  if(w.kind === 'wind') parts.push('puhanguti kuni ' + Math.round(w.peak) + ' m/s');
+  return { title: APP_ALERT_TITLE[w.kind][Math.max(0, w.level - 1)], detail: parts.join(' · ') };
+}
+
+function renderMapWarning(){
+  if(!MAP_WARN) return;            // the first clock tick runs before this is set
+  var el = byId('map-warning');
+  if(!el) return;
+  var now = Date.now(), list = [], official = {};
+  MAP_WARN.cap.forEach(function(w){
+    if(w.level > 0 && !(w.endMs !== null && w.endMs <= now)){
+      list.push(w);
+      if(w.kind) official[w.kind] = true;
+    }
+  });
+  MAP_WARN.road.forEach(function(w){
+    // An old reading can't vouch for the road now — same 6 h rule as the chip.
+    if(w.obsMs !== null ? now - w.obsMs <= STATION_STALE_AFTER_MIN * 60000 : !w.stale) list.push(w);
+  });
+  MAP_WARN.app.forEach(function(w){
+    if(w.endMs > now && !official[w.kind]) list.push(w);
+  });
+  // Level, then official > road > model, then thunder > wind > rain (a
+  // storm later outranks a breezy 16 m/s now), then the sooner one.
+  list.sort(function(a, b){
+    return (b.level - a.level)
+        || (MAP_WARN_SRC_RANK[a.src] - MAP_WARN_SRC_RANK[b.src])
+        || ((MAP_WARN_KIND_RANK[a.kind] || 0) - (MAP_WARN_KIND_RANK[b.kind] || 0))
+        || (Math.max(a.startMs || 0, now) - Math.max(b.startMs || 0, now));
+  });
+
+  var top = list.length ? mapWarnText(list[0], now) : null;
+  var key = top ? list[0].level + '|' + top.title + '|' + top.detail + '|' + list.length : '';
+  if(key !== MAP_WARN_KEY){
+    MAP_WARN_KEY = key;
+    el.innerHTML = '';
+    el.className = 'map-warning' + (top ? ' on lvl' + list[0].level : '');
+    if(top){
+      el.innerHTML = MAP_WARN_ICON;
+      var text = document.createElement('span');
+      text.className = 'map-warning-text';
+      var title = document.createElement('b');
+      title.className = 'map-warning-title';
+      title.textContent = top.title;
+      text.appendChild(title);
+      if(top.detail){
+        var detail = document.createElement('span');
+        detail.className = 'map-warning-detail';
+        detail.textContent = top.detail;
+        text.appendChild(document.createTextNode(' '));
+        text.appendChild(detail);
+      }
+      el.appendChild(text);
+      if(list.length > 1){
+        var more = document.createElement('span');
+        more.className = 'map-warning-more';
+        more.textContent = '+' + (list.length - 1);
+        el.appendChild(more);
+      }
+    }
+  }
+  // Move the zoom +/- and the Sadu legend down under the strip. Measured
+  // every time (cheap): it is 0 on the phone, where the strip never shows.
+  var map = byId('radar-map');
+  if(!map) return;
+  var h = top ? el.offsetHeight : 0;
+  if(h > 0){
+    map.style.setProperty('--map-warning-h', h + 'px');
+    map.classList.add('has-warning');
+  }else{
+    map.classList.remove('has-warning');
+  }
+}
+
+/* ─── Storm alerts from the forecast: thunder, heavy rain, gusts ────
+ * The model's own heads-up, for the banner over the map (and the phone's
+ * #alert-banner). Each phenomenon is judged on its own. The old version
+ * stopped looking for heavy rain once it had found a thunder hour (an
+ * else-if), and its heavy-rain test needed > 3 mm AND a WMO code in
+ * {65, 67, 82}, a conjunction a 9 km model almost never produces — so it
+ * never fired.
+ *
+ * Hourly precipitation, weathercode and gusts all describe the hour
+ * ENDING at time[i], the slot (t−1h, t], as everywhere else here. A slot
+ * that has begun is 'praegu': the banner used to say thunder was
+ * 'expected at 15:00' while the 14–15 hour was code 95. The current block
+ * (a 15-min slice) can also raise 'praegu', but only while it is about
+ * now — a cached forecast's 'current' can be hours old.
+ *
+ * Thresholds:
+ *   gusts   EMHI's own criteria on land (ilmateenistus.ee, hoiatuste
+ *           kriteeriumid): 15 / 23 / 30 m/s → level 1 / 2 / 3.
+ *   rain    EMHI warns from 20 mm in an hour, which a 9 km model's hourly
+ *           sum never reaches: it spreads a downpour over the whole grid
+ *           cell. So the heads-up starts at 4 mm/h, the usual 'heavy rain'
+ *           line (the Sadu tile says 'tugev' from 2 and 'paduvihm' from 7),
+ *           at level 1; EMHI's 30 and 50 mm/h lift it to 2 and 3.
+ *   thunder any hour with WMO 95–99, level 1.
+ * ────────────────────────────────────────────────────────────── */
+var ALERT_WINDOW_H    = 12;
+var ALERT_GUST_LEVELS = [15, 23, 30];   // m/s
+var ALERT_RAIN_LEVELS = [4, 30, 50];    // mm/h
+var APP_ALERT_TITLE = {
+  thunder: ['Äike', 'Äike', 'Äike'],
+  rain:    ['Tugev vihm', 'Väga tugev vihm', 'Erakordselt tugev vihm'],
+  wind:    ['Tugev tuul', 'Väga tugev tuul', 'Erakordselt tugev tuul']
+};
+var APP_ALERT_ICON = { thunder: '⛈', rain: '🌧', wind: '💨' };
+
+function alertLevel(v, stops){
+  for(var i = stops.length - 1; i >= 0; i--) if(v >= stops[i]) return i + 1;
+  return 0;
+}
+
+function checkAlerts(hourly, cur){
+  var now = Date.now(), until = now + ALERT_WINDOW_H * 3600000;
+  var found = {};
+  function hit(kind, startMs, endMs, peak, level){
+    var a = found[kind];
+    if(!a){ found[kind] = { src: 'app', kind: kind, startMs: startMs, endMs: endMs, peak: peak, level: level }; return; }
+    if(startMs < a.startMs) a.startMs = startMs;
+    if(endMs > a.endMs) a.endMs = endMs;
+    if(peak > a.peak) a.peak = peak;
+    if(level > a.level) a.level = level;
+  }
+  var times = (hourly && hourly.time) || [];
+  for(var i = 0; i < times.length; i++){
+    var t = parseLocalIsoFlexible(times[i]);
+    if(!t) continue;
+    var end = t.getTime(), start = end - 3600000;
+    if(end <= now) continue;          // slot already over
+    if(start >= until) break;
+    if(start < now) start = now;      // the slot we're in
+    var code = hourly.weathercode ? hourly.weathercode[i] : null;
+    var mm   = hourly.precipitation ? (hourly.precipitation[i] || 0) : 0;
+    var gust = hourly.wind_gusts_10m ? (hourly.wind_gusts_10m[i] || 0) : 0;
+    if(code >= 95) hit('thunder', start, end, 0, 1);
+    if(mm >= ALERT_RAIN_LEVELS[0]) hit('rain', start, end, mm, alertLevel(mm, ALERT_RAIN_LEVELS));
+    if(gust >= ALERT_GUST_LEVELS[0]) hit('wind', start, end, gust, alertLevel(gust, ALERT_GUST_LEVELS));
+  }
+  var cs = cur && cur.time ? parseLocalIsoFlexible(cur.time) : null;
+  if(cs && Math.abs(now - cs.getTime()) < 3600000){
+    var cEnd = Math.max(now + 60000, cs.getTime() + (cur.interval > 0 ? cur.interval : 900) * 1000);
+    var cRate = currentPrecipRate(cur), cGust = cur.wind_gusts_10m || 0;
+    if(cur.weather_code >= 95) hit('thunder', now, cEnd, 0, 1);
+    if(cRate >= ALERT_RAIN_LEVELS[0]) hit('rain', now, cEnd, cRate, alertLevel(cRate, ALERT_RAIN_LEVELS));
+    if(cGust >= ALERT_GUST_LEVELS[0]) hit('wind', now, cEnd, cGust, alertLevel(cGust, ALERT_GUST_LEVELS));
+  }
+  var items = [];
+  for(var k in found){ if(found.hasOwnProperty(k)) items.push(found[k]); }
+  setMapWarnings('app', items);
+  renderAlertBanner(items);
+}
+
+/* The phone's one-line banner: the most severe of the same alerts. */
+function renderAlertBanner(items){
   var banner = byId('alert-banner');
   if(!banner) return;
-  if(stormTime){
-    banner.style.display = '';
-    banner.style.background = 'rgba(201,120,112,0.10)';
-    banner.style.border = '1px solid rgba(201,120,112,0.30)';
-    banner.style.color = 'var(--bad)';
-    banner.innerHTML = '⛈ Äike oodata ~ ' + formatTime(stormTime) + ' paiku';
-  } else if(rainTime){
-    banner.style.display = '';
-    banner.style.background = 'rgba(255,255,255,0.05)';
-    banner.style.border = '1px solid rgba(255,255,255,0.10)';
-    banner.style.color = 'rgba(255,255,255,0.85)';
-    banner.innerHTML = '🌧 Tugev vihm oodata ~ ' + formatTime(rainTime) + ' paiku';
-  } else {
-    banner.style.display = 'none';
-  }
+  if(!items.length){ banner.style.display = 'none'; return; }
+  var now = Date.now();
+  var a = items.slice().sort(function(x, y){
+    return (y.level - x.level) || (MAP_WARN_KIND_RANK[x.kind] - MAP_WARN_KIND_RANK[y.kind])
+        || (x.startMs - y.startMs);
+  })[0];
+  var txt = APP_ALERT_ICON[a.kind] + ' ' + APP_ALERT_TITLE[a.kind][Math.max(0, a.level - 1)] + ' '
+          + (a.startMs <= now ? 'praegu' : 'oodata ~ ' + formatTime(new Date(a.startMs)) + ' paiku');
+  if(a.kind === 'rain') txt += ' · kuni ' + round1(a.peak) + ' mm/h';
+  if(a.kind === 'wind') txt += ' · puhanguti kuni ' + Math.round(a.peak) + ' m/s';
+  var urgent = a.kind === 'thunder' || a.level >= 2;
+  banner.style.display = '';
+  banner.style.background = urgent ? 'rgba(201,120,112,0.10)' : 'rgba(255,255,255,0.05)';
+  banner.style.border = urgent ? '1px solid rgba(201,120,112,0.30)' : '1px solid rgba(255,255,255,0.10)';
+  banner.style.color = urgent ? 'var(--bad)' : 'rgba(255,255,255,0.85)';
+  banner.textContent = txt;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3572,7 +3807,7 @@ function renderWeather(data, savedAt){
     renderHourly(data.hourly);
     renderDaily(data.daily, data.hourly);
     updateRainStart(data.hourly, precip);
-    checkAlerts(data.hourly);
+    checkAlerts(data.hourly, cur);
 
     // Sparklines (replace mock data with real)
     if(typeof renderSpark === 'function'){
@@ -4414,10 +4649,53 @@ var WARN_EVENT_ET = {
   'Drought Level 2':               'Tugev põud',
   'Drought Level 3':               'Väga tugev põud'
 };
+/* MeteoAlarm awareness level of a CAP warning: 1 yellow, 2 orange, 3 red.
+ * The event name carries it ('Wind Level 2'); CAP severity is the fallback
+ * (Moderate 1, Severe 2, Extreme 3). Minor is MeteoAlarm's green, 'no
+ * particular awareness', and scores 0: the map banner leaves it out. */
+function capLevel(w){
+  var m = /Level\s*(\d)/.exec(w.event || '');
+  if(m) return Math.min(3, parseInt(m[1], 10));
+  var s = (w.severity || '').toLowerCase();
+  return s === 'extreme' ? 3 : s === 'severe' ? 2 : s === 'moderate' ? 1 : 0;
+}
+/* The phenomenon, where the app has an alert of its own for it — an
+ * official warning then stands in for the app's (renderMapWarning). */
+function capKind(ev){
+  ev = ev || '';
+  if(/^Wind\b/.test(ev)) return 'wind';
+  if(/^Thunderstorm/.test(ev)) return 'thunder';
+  if(/^Rain Level/.test(ev)) return 'rain';
+  return null;
+}
+function capTimeMs(s){
+  var ms = s ? Date.parse(s) : NaN;
+  return isNaN(ms) ? null : ms;
+}
+
+/* data is the EMHI bundle (or anything with a warnings array). */
 function renderWarnings(data){
+  var now = Date.now();
+  // The bundle can be hours old — the bridge's cron runs every few hours in
+  // practice — so drop what has expired since it was written. Most severe first.
+  var arr = ((data && data.warnings) || []).filter(function(w){
+    var exp = capTimeMs(w.expires);
+    return exp === null || exp > now;
+  });
+  arr.sort(function(a, b){ return capLevel(b) - capLevel(a); });
+  setMapWarnings('cap', arr.map(function(w){
+    return {
+      src: 'cap', kind: capKind(w.event), level: capLevel(w),
+      title: WARN_EVENT_ET[w.event] || w.event || 'Hoiatus',
+      // MeteoAlarm's English block says 'Lääne county'
+      area: (w.areaDesc || '').replace(/ county$/, ' maakond'),
+      startMs: capTimeMs(w.onset), endMs: capTimeMs(w.expires)
+    };
+  }));
+
+  // Phone: the persistent pill above the hero (hidden on the kiosk).
   var el = byId('warning-bar');
   if(!el) return;
-  var arr = (data && data.warnings) || [];
   if(arr.length === 0){
     // No active warnings — keep the "kõik korras" pill on phone, but
     // tag it so iPad landscape CSS can hide the otherwise-empty row.
@@ -4443,99 +4721,28 @@ function renderWarnings(data){
     el.style.background = 'rgba(233,167,107,0.10)';
     el.style.border = '1px solid rgba(233,167,107,0.30)';
   }
-  el.innerHTML = '<span class="alert-icon">⚠</span><span>' + label + '</span>';
+  el.innerHTML = '<span class="alert-icon">⚠</span><span></span>';
+  el.lastChild.textContent = label + (arr.length > 1 ? ' +' + (arr.length - 1) : '');
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * WARNINGS — fetch live from EMHI XML, filter Lääne maakond + expiry
- * Falls back to GitHub data branch if CORS blocks direct fetch.
+ * WARNINGS — one source: the MeteoAlarm CAP feed, carried by the EMHI
+ * bundle the wa2 bridge publishes (warnings[], already filtered to Lääne
+ * maakond and to onsets within 24 h). fetchLaaneNigula() reads that same
+ * file for the stations and hands it to renderWarnings() too, so one
+ * request serves both, and the cached copy puts a warning on screen at
+ * boot. (The separate fetchWarnings() this replaces only ever ran on its
+ * 5-min timer, so after a reload no warning could show for 5 minutes.)
+ *
+ * The direct path to EMHI's hoiatus.php is gone. It never worked in a
+ * browser: the endpoint sends no Access-Control-Allow-Origin. And it
+ * could not have worked if it had: it serves its own <warnings><warning>
+ * format (area_est, content_est — free text, no levels), not the CAP the
+ * parser looked for. A proxy or a CORS change would have turned it into
+ * a 200 with zero parsed warnings, i.e. 'no warnings' in a storm, and a
+ * 200 never fell back to the bridge. MeteoAlarm itself sends no CORS
+ * header either, hence the bridge.
  * ═══════════════════════════════════════════════════════════════ */
-var EMHI_WARNINGS_URL = 'https://www.ilmateenistus.ee/ilma_andmed/xml/hoiatus.php';
-
-function parseEmhiWarningsXML(xmlText){
-  // Parse CAP XML, return array of active warnings for Lääne maakond
-  var warnings = [];
-  var now = new Date();
-  try {
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(xmlText, 'application/xml');
-    var alerts = doc.querySelectorAll('alert');
-    alerts.forEach(function(alert){
-      var expires = alert.querySelector('expires');
-      var onset   = alert.querySelector('onset');
-      var event   = alert.querySelector('event');
-      var severity= alert.querySelector('severity');
-      var areaDesc= alert.querySelector('areaDesc');
-      if(!expires || !event) return;
-      var expiresDate = new Date(expires.textContent.trim());
-      var onsetDate   = onset ? new Date(onset.textContent.trim()) : now;
-      // Filter: must not be expired, must not be in the future beyond now
-      if(expiresDate <= now) return;
-      if(onsetDate > now) return; // not yet active — skip (or show as upcoming?)
-      // Filter: must cover Lääne maakond (or all of Estonia)
-      var area = areaDesc ? areaDesc.textContent : '';
-      if(area && area.indexOf('Lääne') === -1 && area.indexOf('Estonia') === -1 && area.indexOf('Eesti') === -1) return;
-      warnings.push({
-        event:    event.textContent.trim(),
-        severity: severity ? severity.textContent.trim() : 'Moderate',
-        areaDesc: area,
-        expires:  expires.textContent.trim()
-      });
-    });
-  } catch(e){ console.warn('EMHI XML parse error', e); }
-  return warnings;
-}
-
-function fetchWarningsDirect(onFail){
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', EMHI_WARNINGS_URL, true);
-  xhr.timeout = 8000;
-  xhr.onload = function(){
-    if(xhr.status !== 200){ onFail(); return; }
-    var warnings = parseEmhiWarningsXML(xhr.responseText);
-    renderWarnings({ warnings: warnings });
-  };
-  xhr.onerror   = function(){ onFail(); };
-  xhr.ontimeout = function(){ onFail(); };
-  xhr.send();
-}
-
-function fetchWarningsFallback(){
-  // Data branch fallback — but filter out expired warnings client-side
-  var urls = [EMHI_LOCAL_URL, EMHI_REMOTE_URL];
-  var idx = 0;
-  function tryNext(){
-    if(idx >= urls.length) return;
-    var url = urls[idx++];
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.timeout = 8000;
-    xhr.onload = function(){
-      if(xhr.status !== 200){ tryNext(); return; }
-      try{
-        var data = JSON.parse(xhr.responseText);
-        // Filter out expired warnings before rendering
-        var now = new Date();
-        if(data.warnings){
-          data.warnings = data.warnings.filter(function(w){
-            if(!w.expires) return true;
-            return new Date(w.expires) > now;
-          });
-        }
-        renderWarnings(data);
-      }catch(e){ tryNext(); }
-    };
-    xhr.onerror   = function(){ tryNext(); };
-    xhr.ontimeout = function(){ tryNext(); };
-    xhr.send();
-  }
-  tryNext();
-}
-
-function fetchWarnings(){
-  fetchWarningsDirect(fetchWarningsFallback);
-}
-setInterval(fetchWarnings, 5 * 60 * 1000);
 var EMHI_LOCAL_URL = 'data/emhi.json';
 var EMHI_REMOTE_URL = 'https://raw.githubusercontent.com/indrekraag/weatherapp2/data/emhi.json';
 
@@ -4550,7 +4757,7 @@ function fetchLaaneNigulaFrom(url, onFail){
       saveCache('wx.laanenigula', data);
       renderLaaneNigula(data);
       renderHaapsalu(data);
-      // Warnings now handled by fetchWarnings() separately
+      renderWarnings(data);   // same bundle — see WARNINGS above
     }catch(e){ if(onFail) onFail(); }
   };
   xhr.onerror = function(){ if(onFail) onFail(); };
@@ -5463,7 +5670,7 @@ function hydrateFromCache(){
   var k = loadCache('wx.kurevere');
   if(k) renderKurevere(k.data);
   var l = loadCache('wx.laanenigula');
-  if(l){ renderLaaneNigula(l.data); renderHaapsalu(l.data); }
+  if(l){ renderLaaneNigula(l.data); renderHaapsalu(l.data); renderWarnings(l.data); }
   var np = loadCache('wx.nps');
   if(np) renderNps(np.data);
 }
@@ -5937,8 +6144,7 @@ function initIpadEnhancements(){
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState === 'visible'){
       if(typeof fetchKurevere      === 'function') fetchKurevere();
-      if(typeof fetchLaaneNigula   === 'function') fetchLaaneNigula();
-      if(typeof fetchWarnings      === 'function') fetchWarnings();
+      if(typeof fetchLaaneNigula   === 'function') fetchLaaneNigula();   // + warnings
       if(typeof fetchWeatherAndForecast === 'function') fetchWeatherAndForecast();
       if(typeof fetchKpForecast    === 'function') fetchKpForecast();
     }
