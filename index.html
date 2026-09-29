@@ -4819,7 +4819,23 @@ function updateRainStart(hourly, rateNow){
   // hourly sum can't say when inside the hour it starts.
   if(diff <= 0){ el.textContent = 'alla tunni'; return; }
   var h = Math.floor(diff/3600000), m = Math.floor((diff%3600000)/60000);
-  el.textContent = h <= 0 ? ('~' + m + ' min') : ('~' + h + ' h ' + m + ' min');
+  if(h < 6){
+    el.textContent = h <= 0 ? ('~' + m + ' min') : ('~' + h + ' h ' + m + ' min');
+    return;
+  }
+  // Further out a countdown ('~45 h 34 min') has to be converted back into
+  // a day in your head, and an hourly model isn't minute-precise anyway —
+  // name the day and hour instead: 'täna ~kl 21', 'homme ~kl 13',
+  // 'neljapäeval ~kl 13'.
+  var start = new Date(change), today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var dayDiff = Math.round((new Date(start.getFullYear(), start.getMonth(), start.getDate()) - today) / 86400000);
+  var ON_DAY = ['pühapäeval','esmaspäeval','teisipäeval','kolmapäeval','neljapäeval','reedel','laupäeval'];
+  // 'Saju alguseni: neljapäeval ~kl 13' wraps both halves of the header in
+  // the 360px column; the day already says "next rain", so shorten the label.
+  if(labelEl) labelEl.textContent = 'Sadu:';
+  el.textContent = (dayDiff === 0 ? 'täna' : dayDiff === 1 ? 'homme' : ON_DAY[start.getDay()]) +
+                   ' ~kl ' + pad(start.getHours());
 }
 
 function fetchWeatherAndForecast(){
@@ -7344,7 +7360,10 @@ function radarLabelFrame(){
   var isLatest = RADAR.frameIdx === n - 1;
   var stale = radarStale();
   var ref = stale ? Date.now() : RADAR.frames[n - 1].time * 1000;
-  var rel = (isLatest && !stale) ? 'nüüd' : '−' + Math.round((ref - f.time * 1000) / 60000) + ' min';
+  var ageMin = Math.round((ref - f.time * 1000) / 60000);
+  // '−490 min' is arithmetic, not an answer: past 90 min say hours.
+  var rel = (isLatest && !stale) ? 'nüüd'
+          : '−' + (ageMin < 90 ? ageMin + ' min' : Math.round(ageMin / 60) + ' h');
   lbl.innerHTML = '<span class="rt-rel">' + rel + '</span> <span class="rt-clock">' +
                   formatTime(new Date(f.time * 1000)) + '</span>';
   lbl.classList.toggle('stale', stale);
@@ -7723,6 +7742,15 @@ function ipadEnterMap(){
   // and sunrise/sunset arrows have room to extend without spilling off
   // the map edges (which would happen at the tighter 50 km view).
   ipadPresetView(false);
+  // renderWeather() pushes wind into the overlay only if updateWindOverlay
+  // already exists — and it lives in this later script, so the cache paint
+  // (and sometimes a fast fetch) runs before it and the map sat without a
+  // wind arrow until the next 5-min render, or for good while Open-Meteo
+  // is down. Catch up from the payload the hero was painted from.
+  if(IPAD.windDir === null && HERO_SKY && HERO_SKY.cur){
+    var hc = HERO_SKY.cur;
+    updateWindOverlay(Math.round(hc.wind_direction_10m), round1(hc.wind_speed_10m), round1(hc.wind_gusts_10m));
+  }
   setTimeout(function(){ if(RADAR.map) RADAR.map.invalidateSize(); drawOverlay(); }, 200);
   setTimeout(drawOverlay, 1500);
 }
