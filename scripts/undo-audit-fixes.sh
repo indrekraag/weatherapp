@@ -1,8 +1,15 @@
 #!/bin/sh
-# Put the kiosk back exactly as it was before the 2026-09 design-audit
-# fixes (git tag `pre-audit-fixes`), and publish that.
+# Put the kiosk back as it was before a batch of audit fixes, and publish.
 #
-#   cd ~/wa1 && sh scripts/undo-audit-fixes.sh
+#   cd ~/wa1 && sh scripts/undo-audit-fixes.sh          # all of it: back to
+#                                                       # before 2026-09 (tag
+#                                                       # pre-audit-fixes)
+#   cd ~/wa1 && sh scripts/undo-audit-fixes.sh codex    # only the Codex-audit
+#                                                       # fixes: back to v1.3.0
+#                                                       # (tag pre-codex-fixes)
+#
+# 'codex' restores index.html only — v1.3.0 already has today's sw.js, so
+# the service worker stays as it is. The steps below describe the full undo.
 #
 # What it does:
 #   1. restores index.html from the tag — the build stamp in the hero bar
@@ -26,6 +33,19 @@ if [ -n "$(git status --porcelain index.html sw.js)" ]; then
 fi
 
 git pull --ff-only
+
+if [ "${1:-}" = "codex" ]; then
+  git checkout pre-codex-fixes -- index.html
+  git add index.html
+  git commit -m "Undo the Codex-audit fixes: index.html back to pre-codex-fixes (v1.3.0)
+
+Redo with: git revert <this commit>."
+  git push
+  echo
+  echo "Done. The kiosk shows 'v1.3.0 · 29.09 15:32' in the hero bar once it has reloaded."
+  exit 0
+fi
+
 git checkout pre-audit-fixes -- index.html
 
 cat > sw.js <<'EOF'
