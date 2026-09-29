@@ -3736,14 +3736,22 @@ function renderDaily(daily, hourly){
   if(!strip) return;
   strip.innerHTML = '';
   var ET_DAY_ABBR = ['Püh','Esm','Teis','Kolm','Nelj','Reede','Laup'];
-  for(var i=0; i < Math.min(7, daily.time.length); i++){
+  // A cached payload from before midnight starts with a day that is already
+  // over (the weather cache is kept up to 24 h). Skip past days so 'Täna'
+  // is always today; the payload has 8 days, so 7 are still left.
+  var now = new Date();
+  var todayStr = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+  var shown = 0;
+  for(var i=0; i < daily.time.length && shown < 7; i++){
+    if(daily.time[i] < todayStr) continue;
+    shown++;
     var d = new Date(daily.time[i] + 'T12:00:00');
     var tmax = Math.round(daily.temperature_2m_max[i]);
     var tmin = Math.round(daily.temperature_2m_min[i]);
     var rain = daily.precipitation_sum ? round1(daily.precipitation_sum[i] || 0) : null;
     var wind = daily.wind_speed_10m_max ? Math.round(daily.wind_speed_10m_max[i] || 0) : null;
     var icon = weatherCodeToSVG(dailyPrecipIcon(daily, i, hourly), true);
-    var isToday = (i === 0);
+    var isToday = (daily.time[i] === todayStr);
     var dd = ('0' + d.getDate()).slice(-2);
     var mm = ('0' + (d.getMonth() + 1)).slice(-2);
     var name = isToday ? 'Täna' : dd + '/' + mm;
