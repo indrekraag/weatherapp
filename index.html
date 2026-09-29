@@ -853,6 +853,24 @@ body {
   color: var(--fg-3);
   letter-spacing: 0.3px;
 }
+/* Kurevere's road surface, 'tee +17° märg' (renderKurevereRoad). Its own
+   line, like the age tag. Slippery (ice, hoarfrost, snow, slush, tarktee's
+   libeduse oht, low grip) turns the line and the whole chip coral — the
+   one reading on the kiosk that should jump out on a winter morning. */
+.station-road {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--fg-2);
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+}
+.station-road .nw { white-space: nowrap; }
+.station-road.caution { color: var(--warn); }
+.station-road.bad { color: var(--bad); font-weight: 700; }
+.station.road-bad {
+  background: rgba(212,118,110,0.14);
+  border-color: rgba(212,118,110,0.60);
+}
 
 /* ─── CARD HEADER (used by hourly, 7-day, etc.) ──────────── */
 .card-header {
@@ -2062,13 +2080,15 @@ body {
     font-size: 22px; width: 26px; height: 26px;
   }
   .stations { margin-top: 6px; padding-top: 8px; gap: 5px; }
-  .station { padding: 6px 5px; gap: 2px; }
+  /* 4 px sides, not 5: the road line 'tee +11° niiske' needs 95 px. */
+  .station { padding: 6px 4px; gap: 2px; }
   .station-name { font-size: 9.5px; }
   .station-temp { font-size: 14px; }
   .station-sub { font-size: 8.5px; }
-  /* Age tag and fetch status are read from the door: kiosk 14px floor. */
+  /* Age tag, fetch status and road state are read from the door: kiosk 14px floor. */
   .station-age,
-  .station-status { font-size: 14px; letter-spacing: 0; }
+  .station-status,
+  .station-road { font-size: 14px; letter-spacing: 0; }
 
   /* 7-DAY strip — sits in the RIGHT column only (above the map), so
    * the left sidebar can stretch to the very top of the viewport. */
@@ -4552,7 +4572,100 @@ function renderKurevere(data){
                   : a.precipitation !== undefined ? a.precipitation : 0;
     renderStation('kv', { temp: a.air_temp, precip: precipVal,
                           wind: windVal, windDir: windDirVal });
+    renderKurevereRoad(a, obsMs, obsMs === null && data.stale === true);
   }catch(e){ console.warn('renderKurevere error', e); }
+}
+
+/* ─── Kurevere road surface ────────────────────────────────────────
+ * The tram/ layer reports the road itself: road_status, road_temp and
+ * road_status_aggregate (tarktee's own map-colour verdict). The bundle
+ * also carries grip_factor, but the layer doesn't publish that field
+ * today, so it is always null — handled, and used if it ever appears.
+ * On a winter morning 'tee jäine' is the reading that matters most.
+ *
+ * The words are tarktee.ee's own (its et.json RoadStatus enum), so the
+ * chip says what the Transpordiamet map says. NB_ states are the same
+ * states with tarktee's 'NB!' flag; shown without it. */
+var ROAD_STATUS_ET = {
+  DRY: 'kuiv', MOIST: 'niiske', WET: 'märg',
+  MOIST_AND_CHEMICAL: 'soolaniiske', WET_AND_CHEMICAL: 'soolamärg',
+  FROST: 'härmatis', ICE: 'jäine', SNOWY: 'lumine', SNOW: 'lumine', SLUSH: 'lörts'
+};
+/* Grip below this counts as slippery: 0.4 is the example threshold in
+   tarktee's own grip-alert settings. */
+var ROAD_GRIP_MIN = 0.4;
+
+function roadState(a){
+  var st = typeof a.road_status === 'string' ? a.road_status.replace(/^NB_/, '') : null;
+  var agg = a.road_status_aggregate || '';
+  var grip = typeof a.grip_factor === 'number' && !isNaN(a.grip_factor) ? a.grip_factor : null;
+  var temp = typeof a.road_temp === 'number' && !isNaN(a.road_temp) ? a.road_temp : null;
+  // Ice nobody sees from the window: ice, hoarfrost, rain on a road below
+  // zero (aggregate COLD_RAIN, tarktee's 'suur libeduse oht') or measured
+  // low grip. This is what goes up on the map banner.
+  var icy = st === 'ICE' || st === 'FROST' || agg === 'COLD_RAIN'
+         || (grip !== null && grip < ROAD_GRIP_MIN);
+  // Snow and slush are slippery too, but visible; COLD_OLD_PRECIP is
+  // tarktee's 'libeduse oht'. Coral on the chip, no banner.
+  var slippery = icy || st === 'SNOWY' || st === 'SNOW' || st === 'SLUSH' || agg === 'COLD_OLD_PRECIP';
+  var surface = ROAD_STATUS_ET[st] || '';
+  // Slippery by tarktee's verdict or the grip while the surface word is a
+  // harmless one ('märg'): the chip says what matters.
+  var word = slippery && (!surface || /^(DRY|MOIST|WET)/.test(st)) ? 'libe' : surface;
+  return {
+    word: word, surface: surface, temp: temp, grip: grip, icy: icy,
+    risk: agg === 'COLD_RAIN' ? 'suur libeduse oht' : agg === 'COLD_OLD_PRECIP' ? 'libeduse oht' : '',
+    // COLD_WET_SURFACE: tarktee's 'märg teekate' — wet and cold, can freeze.
+    cls: slippery ? 'bad' : agg === 'COLD_WET_SURFACE' ? 'caution' : ''
+  };
+}
+
+/* 'tee +17° märg' / 'tee −0.4° jäine' — its own line in the chip, like the
+   age tag, so the value spans survive. It has to fit a 95 px chip at the
+   kiosk's 14 px floor, so whole degrees from 10° up; below that the tenth
+   stays, because there it decides which side of freezing the road is on
+   (−0.4 must not read '+0'). Each half is kept whole: a long word wraps to
+   a second line instead of breaking. */
+function roadTempText(t){
+  var v = Math.abs(t) < 10 ? round1(t).toFixed(1) : String(Math.round(t));
+  if(v === '0.0' || v === '0' || t > 0) return '+' + v + '°';
+  return '\u2212' + v.replace('-', '') + '°';   // a real minus: a hyphen is lost at 1 m
+}
+function renderKurevereRoad(a, obsMs, stale){
+  var block = byId('kv-block');
+  if(!block) return;
+  var rs = roadState(a);
+  var line = block.querySelector('.station-road');
+  block.classList.toggle('road-bad', rs.cls === 'bad');
+  if(rs.temp === null && !rs.word){
+    if(line && line.parentNode) line.parentNode.removeChild(line);
+    setMapWarnings('road', []);
+    return;
+  }
+  if(!line){
+    line = document.createElement('div');
+    block.insertBefore(line, block.querySelector('.station-age') || block.querySelector('.station-status'));
+  }
+  line.className = 'station-road' + (rs.cls ? ' ' + rs.cls : '');
+  line.innerHTML = '<span class="nw"></span>';
+  line.firstChild.textContent = 'tee' + (rs.temp !== null ? ' ' + roadTempText(rs.temp) : '');
+  if(rs.word){
+    var w = document.createElement('span');
+    w.className = 'nw';
+    w.textContent = rs.word;
+    line.appendChild(document.createTextNode(' '));
+    line.appendChild(w);
+  }
+  if(!rs.icy){ setMapWarnings('road', []); return; }
+  var parts = ['Kurevere'];
+  if(rs.surface) parts.push(rs.surface);
+  if(rs.temp !== null) parts.push('tee ' + roadTempText(rs.temp));
+  if(rs.grip !== null) parts.push('haardetegur ' + rs.grip.toFixed(2));
+  if(rs.risk) parts.push(rs.risk);
+  setMapWarnings('road', [{
+    src: 'road', kind: 'road', level: 1, title: 'Libe tee', detail: parts.join(' · '),
+    obsMs: obsMs, stale: !!stale
+  }]);
 }
 function renderEmhiStation(prefix, data, wmo){
   try{
